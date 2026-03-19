@@ -1,0 +1,348 @@
+{% extends 'base.html' %}
+{% block title %}Admin Panel – Nguyễn Văn Huyên Learning{% endblock %}
+{% block content %}
+<div class="container-fluid py-4 pb-5">
+  <!-- Stat Cards -->
+  <div class="row g-3 mb-4">
+    <div class="col-md-3">
+      <div class="kpi-card primary">
+        <div class="kpi-icon primary"><i class="bi bi-people-fill"></i></div>
+        <div class="kpi-num" id="statUsers">—</div>
+        <div class="kpi-label">Tổng người dùng</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="kpi-card success">
+        <div class="kpi-icon success"><i class="bi bi-mortarboard-fill"></i></div>
+        <div class="kpi-num" id="statStudents">—</div>
+        <div class="kpi-label">Học sinh</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="kpi-card warning">
+        <div class="kpi-icon warning"><i class="bi bi-person-video3"></i></div>
+        <div class="kpi-num" id="statTeachers">—</div>
+        <div class="kpi-label">Giáo viên</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="kpi-card info">
+        <div class="kpi-icon info"><i class="bi bi-journal-bookmark-fill"></i></div>
+        <div class="kpi-num" id="statClasses">—</div>
+        <div class="kpi-label">Lớp học</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs Navigation -->
+  <div
+    style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:0.5rem;margin-bottom:1.5rem;">
+    <div class="d-flex gap-1" id="adminTabs">
+      <button
+        style="flex:1;padding:0.65rem 1rem;border:none;border-radius:var(--radius-sm);font-size:0.875rem;font-weight:600;cursor:pointer;transition:var(--transition);background:var(--color-primary);color:#fff;"
+        onclick="showTab('users')" class="admin-tab-btn active">
+        <i class="bi bi-people me-1"></i>Người dùng
+      </button>
+      <button
+        style="flex:1;padding:0.65rem 1rem;border:none;border-radius:var(--radius-sm);font-size:0.875rem;font-weight:600;cursor:pointer;transition:var(--transition);background:transparent;color:var(--color-muted);"
+        onclick="showTab('classes')" class="admin-tab-btn">
+        <i class="bi bi-journal-bookmark me-1"></i>Lớp học
+      </button>
+      <button
+        style="flex:1;padding:0.65rem 1rem;border:none;border-radius:var(--radius-sm);font-size:0.875rem;font-weight:600;cursor:pointer;transition:var(--transition);background:transparent;color:var(--color-muted);"
+        onclick="showTab('subjects')" class="admin-tab-btn">
+        <i class="bi bi-book me-1"></i>Môn học
+      </button>
+    </div>
+  </div>
+
+  <!-- Content Sections -->
+  <div
+    style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:1.5rem 2rem;min-height:400px;">
+
+    <!-- Tab: Users -->
+    <div id="tab-users">
+      <div class="d-flex flex-column flex-md-row justify-content-between align-items-center mb-4 gap-3">
+        <div>
+          <h5 class="fw-bold mb-0"><i class="bi bi-list-ul me-2 text-primary"></i>Danh sách người dùng</h5>
+        </div>
+        <div class="input-group input-group-sm w-auto">
+          <span class="input-group-text bg-light border-end-0"><i class="bi bi-search"></i></span>
+          <input type="text" class="form-control border-start-0 bg-light" id="userSearch" placeholder="Tìm kiếm user..."
+            oninput="filterUsers(this.value)" style="width: 250px;">
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle" id="usersTable">
+          <thead class="bg-light">
+            <tr>
+              <th class="border-0 text-muted small fw-bold text-uppercase">#</th>
+              <th class="border-0 text-muted small fw-bold text-uppercase">Username</th>
+              <th class="border-0 text-muted small fw-bold text-uppercase">Họ tên</th>
+              <th class="border-0 text-muted small fw-bold text-uppercase">Email</th>
+              <th class="border-0 text-muted small fw-bold text-uppercase text-center">Vai trò</th>
+              <th class="border-0 text-muted small fw-bold text-uppercase">Ngày tạo</th>
+              <th class="border-0 text-muted small fw-bold text-uppercase text-center">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody id="usersBody">
+            <tr>
+              <td colspan="7" class="text-center py-5">
+                <div class="spinner-border text-primary spinner-border-sm me-2"></div>
+                Đang tải dữ liệu người dùng...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tab: Classes -->
+    <div id="tab-classes" style="display:none">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h5 class="fw-bold mb-0"><i class="bi bi-journal-text me-2 text-success"></i>Tất cả lớp học</h5>
+        <span
+          class="badge bg-success-subtle text-success border border-success border-opacity-25 py-2 px-3 rounded-pill"
+          id="classCountLabel">0 lớp học</span>
+      </div>
+      <div id="allClassesList" class="row g-4"></div>
+    </div>
+
+    <!-- Tab: Subjects -->
+    <div id="tab-subjects" style="display:none">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h5 class="fw-bold mb-0"><i class="bi bi-book-half me-2 text-info"></i>Danh sách môn học</h5>
+        <button class="btn btn-primary rounded-pill px-4 shadow-sm" data-bs-toggle="modal"
+          data-bs-target="#addSubjectModal">
+          <i class="bi bi-plus-circle me-2"></i>Thêm môn học mới
+        </button>
+      </div>
+      <div class="row g-3" id="subjectsList"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ================= MODALS ================= -->
+
+<!-- Modal: Đổi role -->
+<div class="modal fade" id="changeRoleModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+      <div class="modal-header border-0 bg-danger text-white">
+        <h6 class="modal-title fw-bold">Thay đổi vai trò</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4 text-center">
+        <div class="mb-3">
+          <div class="display-6 text-danger mb-2"><i class="bi bi-person-badge"></i></div>
+          <p class="mb-1 text-muted small">Người dùng: <strong id="crUsername" class="text-dark"></strong></p>
+        </div>
+        <select class="form-select border-0 bg-light rounded-3 py-2 text-center" id="crNewRole"
+          style="font-weight: 600;">
+          <option value="student">Học sinh</option>
+          <option value="teacher">Giáo viên</option>
+          <option value="admin">Quản trị viên</option>
+        </select>
+        <div id="crError" class="text-danger small mt-3 fw-semibold"></div>
+      </div>
+      <div class="modal-footer border-0 p-3 pt-0 justify-content-center">
+        <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Hủy</button>
+        <button type="button" class="btn btn-danger rounded-pill px-4 shadow-sm" onclick="submitChangeRole()">Cập
+          nhật</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Thêm môn học -->
+<div class="modal fade" id="addSubjectModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content border-0 shadow-lg rounded-4">
+      <div class="modal-header border-0 pb-0">
+        <h6 class="modal-title fw-bold">Thêm môn học mới</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4">
+        <div class="form-floating mb-1">
+          <input type="text" class="form-control rounded-3 bg-light border-0" id="newSubjectName"
+            placeholder="Tên môn học">
+          <label for="newSubjectName" class="text-muted">Tên môn học</label>
+        </div>
+        <div id="subjectError" class="text-danger small ms-1 mt-2 fw-semibold"></div>
+      </div>
+      <div class="modal-footer border-0 p-3 pt-0">
+        <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Hủy</button>
+        <button type="button" class="btn btn-primary rounded-pill px-4 shadow-sm" onclick="submitAddSubject()">Lưu
+          lại</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Sửa môn học -->
+<div class="modal fade" id="editSubjectModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content border-0 shadow-lg rounded-4">
+      <div class="modal-header border-0 pb-0">
+        <h6 class="modal-title fw-bold">Sửa tên môn học</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4">
+        <div class="form-floating mb-1">
+          <input type="text" class="form-control rounded-3 bg-light border-0" id="editSubjectName"
+            placeholder="Tên môn học">
+          <label for="editSubjectName" class="text-muted">Nhập tên mới</label>
+        </div>
+        <div id="editSubjectError" class="text-danger small ms-1 mt-2 fw-semibold"></div>
+      </div>
+      <div class="modal-footer border-0 p-3 pt-0">
+        <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Hủy</button>
+        <button type="button" class="btn btn-primary rounded-pill px-4 shadow-sm" onclick="confirmEditSubject()">Cập
+          nhật</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Sửa lớp học -->
+<div class="modal fade" id="editClassModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+      <div class="modal-header border-0 bg-success text-white">
+        <h5 class="modal-title fw-bold">Chỉnh sửa lớp học</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4">
+        <div class="mb-4">
+          <label class="form-label small fw-bold text-muted text-uppercase mb-1">Tên lớp học</label>
+          <input type="text" class="form-control border-0 bg-light rounded-3 py-2" id="editClassName">
+        </div>
+        <div class="mb-4">
+          <label class="form-label small fw-bold text-muted text-uppercase mb-1">Môn học liên kết</label>
+          <select class="form-select border-0 bg-light rounded-3 py-2" id="editClassSubject"></select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-bold text-muted text-uppercase mb-1">Mô tả chi tiết</label>
+          <textarea class="form-control border-0 bg-light rounded-3 py-2" id="editClassDesc" rows="3"></textarea>
+        </div>
+        <div id="editClassError" class="text-danger small mt-3 fw-semibold"></div>
+      </div>
+      <div class="modal-footer border-0 p-3 pt-2">
+        <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Quay lại</button>
+        <button type="button" class="btn btn-success rounded-pill px-4 shadow-sm" onclick="confirmEditClass()">Lưu thay
+          đổi</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Xác nhận Xoá (Generic Delete Confirmation) -->
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+      <div class="modal-body p-4 text-center">
+        <div class="display-4 text-danger mb-3"><i class="bi bi-exclamation-triangle-fill"></i></div>
+        <h5 class="fw-bold mb-2">Xác nhận xoá?</h5>
+        <p class="text-muted small mb-4" id="deleteConfirmMsg"></p>
+        <div class="d-flex gap-2 justify-content-center">
+          <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Hủy</button>
+          <button type="button" class="btn btn-danger rounded-pill px-4 shadow-sm" id="confirmDeleteBtn">Đồng ý
+            xoá</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/admin_panel.js"></script>
+
+<style>
+  /* Modern UI Extras */
+  .animate-slide-in {
+    animation: slideIn 0.4s ease-out;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-in;
+  }
+
+  .hover-lift {
+    transition: transform 0.2s;
+  }
+
+  .hover-lift:hover {
+    transform: translateY(-5px);
+    cursor: default;
+  }
+
+  .fade-in-row {
+    animation: fadeInRow 0.3s ease-in;
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-20px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes fadeInRow {
+    from {
+      opacity: 0;
+      transform: translateX(-10px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .group .op-button-group {
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .card:hover .op-button-group {
+    opacity: 1;
+  }
+
+  #adminTabs .nav-link {
+    color: #6c757d;
+    font-weight: 500;
+    border: none !important;
+    transition: all 0.3s;
+  }
+
+  #adminTabs .nav-link.active {
+    background: #f82d4d !important;
+    color: white !important;
+    box-shadow: 0 4px 12px rgba(248, 45, 77, 0.3);
+  }
+
+  .btn-sm {
+    font-size: 0.8rem;
+  }
+
+  .table thead th {
+    font-size: 0.75rem;
+    letter-spacing: 0.05rem;
+  }
+</style>
+{% endblock %}

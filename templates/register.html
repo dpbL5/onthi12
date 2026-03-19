@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% block title %}Đăng ký – Nguyễn Văn Huyên Learning{% endblock %}
+{% block content %}
+<div class="auth-wrapper">
+    <!-- Left Branding Panel -->
+    <div class="auth-panel-left d-none d-lg-flex">
+        <div class="position-relative z-1 text-center text-white">
+            <div style="width:288px;height:288px;background:rgba(255,255,255,0.15);border-radius:20px;display:flex;align-items:center;justify-content:center;margin:0 auto 1.5rem;overflow:hidden;padding:32px;">
+                <img src="/static/images/logo.png" alt="Logo" style="max-width:100%; max-height:100%; object-fit:contain;">
+            </div>
+            <h2 style="font-size:1.8rem;font-weight:800;letter-spacing:-0.03em;margin-bottom:0.75rem;">Tham gia ngay!</h2>
+            <p style="opacity:0.8;max-width:270px;line-height:1.7;font-size:0.9rem;">Đăng ký tài khoản để bắt đầu học tập và giảng dạy thông minh cùng Nguyễn Văn Huyên Learning.</p>
+            <div style="margin-top:2rem;">
+                <div style="display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;">
+                    <div style="background:rgba(255,255,255,0.15);border-radius:12px;padding:1rem 1.5rem;text-align:center;">
+                        <div style="font-size:1.5rem;font-weight:800;">500+</div>
+                        <div style="font-size:0.72rem;opacity:0.75;">Học sinh</div>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.15);border-radius:12px;padding:1rem 1.5rem;text-align:center;">
+                        <div style="font-size:1.5rem;font-weight:800;">50+</div>
+                        <div style="font-size:0.72rem;opacity:0.75;">Giáo viên</div>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.15);border-radius:12px;padding:1rem 1.5rem;text-align:center;">
+                        <div style="font-size:1.5rem;font-weight:800;">AI</div>
+                        <div style="font-size:0.72rem;opacity:0.75;">Tích hợp</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Form Panel -->
+    <div class="auth-panel-right" style="overflow-y:auto;">
+        <div class="auth-form-box">
+            <div class="d-lg-none text-center mb-4">
+                <img src="/static/images/logo.png" alt="Logo" style="height: 192px; border-radius: 12px;">
+            </div>
+            <h1 class="auth-title">Tạo tài khoản mới</h1>
+            <p class="auth-subtitle">Miễn phí và chỉ mất vài giây. Bắt đầu hành trình học tập!</p>
+
+            <form id="registerForm" autocomplete="on">
+                <!-- Name Row -->
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <label style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem;display:block;">Họ</label>
+                        <input type="text" class="form-control" id="last_name" placeholder="Nguyễn" autocomplete="family-name">
+                    </div>
+                    <div class="col-6">
+                        <label style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem;display:block;">Tên</label>
+                        <input type="text" class="form-control" id="first_name" placeholder="Văn An" autocomplete="given-name">
+                    </div>
+                </div>
+
+                <div class="auth-input-group">
+                    <label for="reg_email">Email</label>
+                    <div class="position-relative">
+                        <i class="bi bi-envelope" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--color-muted);"></i>
+                        <input type="email" class="form-control" id="reg_email" required autocomplete="email"
+                               placeholder="email@example.com" style="padding-left:2.5rem;">
+                    </div>
+                </div>
+
+                <div class="auth-input-group">
+                    <label for="reg_username">Tên đăng nhập</label>
+                    <div class="position-relative">
+                        <i class="bi bi-at" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--color-muted);"></i>
+                        <input type="text" class="form-control" id="reg_username" required autocomplete="username"
+                               placeholder="username_cua_ban" style="padding-left:2.5rem;">
+                    </div>
+                </div>
+
+                <div class="auth-input-group">
+                    <label for="reg_password">Mật khẩu</label>
+                    <div class="position-relative">
+                        <i class="bi bi-lock" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--color-muted);"></i>
+                        <input type="password" class="form-control" id="reg_password" required autocomplete="new-password"
+                               placeholder="Ít nhất 8 ký tự" style="padding-left:2.5rem;padding-right:2.75rem;"
+                               oninput="checkStrength(this.value)">
+                        <button type="button" onclick="togglePwd('reg_password','eyeReg')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--color-muted);cursor:pointer;">
+                            <i class="bi bi-eye" id="eyeReg"></i>
+                        </button>
+                    </div>
+                    <!-- Password strength bar -->
+                    <div id="strengthBar" style="height:4px;border-radius:4px;margin-top:0.4rem;background:var(--color-border);overflow:hidden;display:none;">
+                        <div id="strengthFill" style="height:100%;border-radius:4px;transition:all 0.3s;width:0%;"></div>
+                    </div>
+                    <div id="strengthText" style="font-size:0.72rem;margin-top:0.25rem;"></div>
+                </div>
+
+                <div id="registerError" class="alert alert-danger py-2 px-3 small d-none" style="border-radius:var(--radius-sm);"></div>
+
+                <button type="submit" class="btn btn-primary w-100 py-2 mt-1" id="regBtn" style="font-size:0.95rem;">
+                    <span id="regBtnText"><i class="bi bi-person-plus me-2"></i>Tạo tài khoản</span>
+                    <span id="regBtnSpinner" class="d-none"><span class="spinner-border spinner-border-sm me-2"></span>Đang xử lý...</span>
+                </button>
+            </form>
+
+            <p class="text-center mt-4" style="font-size:0.875rem;color:var(--color-muted);">
+                Đã có tài khoản?
+                <a href="/login/" style="color:var(--color-primary);font-weight:600;text-decoration:none;">Đăng nhập →</a>
+            </p>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/auth.js"></script>
+{% endblock %}

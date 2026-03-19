@@ -1,0 +1,197 @@
+{% extends 'base.html' %}
+{% block title %}Nguyễn Văn Huyên Learning – Nền tảng ôn thi thông minh{% endblock %}
+{% block content %}
+
+<!-- Hero Section -->
+<section class="hero-section">
+    <div class="hero-bg">
+        <div class="hero-blob hero-blob-1"></div>
+        <div class="hero-blob hero-blob-2"></div>
+        <div class="hero-blob hero-blob-3"></div>
+    </div>
+    <div class="container position-relative" style="z-index:1;">
+        <div class="row align-items-center g-5">
+            <div class="col-lg-6">
+                <div class="hero-badge animate-in">
+                    <i class="bi bi-stars"></i> Nền tảng học tập thế hệ mới
+                </div>
+                <h1 class="hero-title animate-in animate-in-delay-1">
+                    Ôn thi thông minh<br>với <span class="highlight">AI trợ giảng</span>
+                </h1>
+                <p class="hero-subtitle animate-in animate-in-delay-2">
+                    Nguyễn Văn Huyên Learning giúp giáo viên tạo đề thi AI, theo dõi tiến độ lớp học và cung cấp phân tích điểm yếu cho từng học sinh một cách chính xác và hiệu quả.
+                </p>
+                <div class="hero-cta-group animate-in animate-in-delay-3">
+                    <a href="/register/" class="hero-cta-primary">
+                        <i class="bi bi-rocket-takeoff-fill"></i> Bắt đầu miễn phí
+                    </a>
+                    <a href="/login/" class="hero-cta-secondary">
+                        <i class="bi bi-box-arrow-in-right"></i> Đăng nhập
+                    </a>
+                </div>
+            </div>
+            <div class="col-lg-6 d-none d-lg-flex justify-content-center animate-in animate-in-delay-2">
+                <!-- Visual illustration cards -->
+                <div style="position:relative; width:380px; height:340px;">
+                    <!-- Floating card 1 -->
+                    <div class="shadow-md" style="position:absolute; top:0; left:0; width:220px; background:#fff; border-radius:16px; padding:1.25rem; border:1px solid var(--color-border); animation: float1 5s ease-in-out infinite;">
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <div style="width:32px;height:32px;border-radius:8px;background:var(--color-primary-light);display:flex;align-items:center;justify-content:center;color:var(--color-primary);"><i class="bi bi-cpu-fill"></i></div>
+                            <span style="font-size:0.8rem;font-weight:700;color:var(--color-text);">AI Tạo đề thi</span>
+                        </div>
+                        <div style="height:6px;border-radius:999px;background:var(--color-border);overflow:hidden;"><div style="height:100%;width:75%;background:linear-gradient(90deg,var(--color-primary),var(--color-secondary));border-radius:999px;"></div></div>
+                        <div style="font-size:0.72rem;color:var(--color-muted);margin-top:0.5rem;">Đang tạo 30 câu hỏi...</div>
+                    </div>
+                    <!-- Floating card 2 -->
+                    <div class="shadow-md" style="position:absolute; top:80px; right:0; width:210px; background:#fff; border-radius:16px; padding:1.25rem; border:1px solid var(--color-border); animation: float2 5s ease-in-out infinite 1.5s;">
+                        <div style="font-size:0.75rem;font-weight:700;color:var(--color-muted);margin-bottom:0.75rem;text-transform:uppercase;letter-spacing:0.05em;">Điểm lớp 12A1</div>
+                        <div class="d-flex gap-1 align-items-end" style="height:60px;">
+                            <div style="flex:1;background:var(--color-primary-light);border-radius:4px 4px 0 0;height:40%;"></div>
+                            <div style="flex:1;background:var(--color-primary);border-radius:4px 4px 0 0;height:70%;"></div>
+                            <div style="flex:1;background:var(--color-primary-light);border-radius:4px 4px 0 0;height:55%;"></div>
+                            <div style="flex:1;background:var(--color-secondary);border-radius:4px 4px 0 0;height:85%;"></div>
+                            <div style="flex:1;background:var(--color-primary-light);border-radius:4px 4px 0 0;height:60%;"></div>
+                        </div>
+                    </div>
+                    <!-- Floating card 3 -->
+                    <div class="shadow-md" style="position:absolute; bottom:0; left:20px; width:250px; background:#fff; border-radius:16px; padding:1.25rem; border:1px solid var(--color-border); animation: float1 6s ease-in-out infinite 2s;">
+                        <div class="d-flex gap-2 mb-1">
+                            <div style="width:28px;height:28px;border-radius:50%;background:var(--color-success-light);display:flex;align-items:center;justify-content:center;color:var(--color-success);font-size:0.8rem;"><i class="bi bi-check2"></i></div>
+                            <div>
+                                <div style="font-size:0.78rem;font-weight:700;">student_khoa</div>
+                                <div style="font-size:0.68rem;color:var(--color-muted);">Đã nộp bài • 8.5 điểm</div>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 mb-1">
+                            <div style="width:28px;height:28px;border-radius:50%;background:var(--color-warning-light);display:flex;align-items:center;justify-content:center;color:var(--color-warning);font-size:0.8rem;"><i class="bi bi-clock"></i></div>
+                            <div>
+                                <div style="font-size:0.78rem;font-weight:700;">student_linh</div>
+                                <div style="font-size:0.68rem;color:var(--color-muted);">Đang làm bài...</div>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <div style="width:28px;height:28px;border-radius:50%;background:var(--color-success-light);display:flex;align-items:center;justify-content:center;color:var(--color-success);font-size:0.8rem;"><i class="bi bi-check2"></i></div>
+                            <div>
+                                <div style="font-size:0.78rem;font-weight:700;">student_minh</div>
+                                <div style="font-size:0.68rem;color:var(--color-muted);">Đã nộp bài • 7.0 điểm</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar mt-5 animate-in animate-in-delay-4">
+            <div class="row g-0 align-items-center">
+                <div class="col-md-3 col-6 mb-3 mb-md-0">
+                    <div class="stat-item">
+                        <div class="stat-num">500+</div>
+                        <div class="stat-label">Học sinh đang học</div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6 border-start-md mb-3 mb-md-0">
+                    <div class="stat-item">
+                        <div class="stat-num">1,200+</div>
+                        <div class="stat-label">Câu hỏi trong hệ thống</div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6 border-start-md">
+                    <div class="stat-item">
+                        <div class="stat-num">50+</div>
+                        <div class="stat-label">Giáo viên sử dụng</div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6 border-start-md">
+                    <div class="stat-item">
+                        <div class="stat-num">AI</div>
+                        <div class="stat-label">Tích hợp Gemini AI</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Features Section -->
+<section class="py-5" style="background: var(--color-surface); border-top: 1px solid var(--color-border);">
+    <div class="container">
+        <div class="text-center mb-5">
+            <div class="hero-badge mx-auto d-inline-flex mb-3"><i class="bi bi-grid-3x3-gap-fill"></i> Tính năng nổi bật</div>
+            <h2 style="font-size:2rem; font-weight:800; letter-spacing:-0.03em;">Mọi thứ bạn cần để dạy và học hiệu quả</h2>
+            <p class="text-muted mt-2">Được thiết kế dành riêng cho giáo viên và học sinh trường THPT.</p>
+        </div>
+        <div class="row g-4">
+            <div class="col-md-4">
+                <div class="feature-card">
+                    <div class="feature-icon-wrap" style="background:var(--color-primary-light);color:var(--color-primary)"><i class="bi bi-pencil-square"></i></div>
+                    <h5 style="font-weight:700;margin-bottom:0.5rem;">Luyện tập & Thi thử</h5>
+                    <p class="text-muted small mb-0">Làm bài theo chủ đề hoặc đề thi mẫu với bộ đếm giờ. Kết quả được phân tích ngay lập tức.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="feature-card">
+                    <div class="feature-icon-wrap" style="background:var(--color-success-light);color:var(--color-success)"><i class="bi bi-robot"></i></div>
+                    <h5 style="font-weight:700;margin-bottom:0.5rem;">AI Tạo đề thông minh</h5>
+                    <p class="text-muted small mb-0">Giáo viên upload tài liệu, AI tự động tạo câu hỏi trắc nghiệm chính xác trong vài giây.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="feature-card">
+                    <div class="feature-icon-wrap" style="background:var(--color-warning-light);color:var(--color-warning)"><i class="bi bi-bar-chart-fill"></i></div>
+                    <h5 style="font-weight:700;margin-bottom:0.5rem;">Phân tích lỗ hổng kiến thức</h5>
+                    <p class="text-muted small mb-0">Hệ thống phát hiện điểm yếu của cả lớp, gửi báo cáo chi tiết cho giáo viên để điều chỉnh giảng dạy.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ── Footer ────────────────────────────────────────────── -->
+<footer class="nvh-footer">
+    <div class="container py-2">
+        <div class="row g-4 mb-3">
+            <div class="col-md-3">
+                <div class="footer-brand">
+                    <i class="bi bi-mortarboard"></i>
+                    Nguyễn Văn Huyên Learning
+                </div>
+                <p class="footer-desc">Nền tảng ôn thi thông minh với AI trợ giảng. Giúp giáo viên tạo đề thi và học sinh luyện tập hiệu quả.</p>
+            </div>
+            <div class="col-md-3">
+                <div class="footer-section-title">Tính năng</div>
+                <a href="/dashboard/" class="footer-link">Dashboard</a>
+                <a href="#" class="footer-link">Ngân hàng câu hỏi</a>
+                <a href="#" class="footer-link">Các đề thi</a>
+                <a href="#" class="footer-link">Luyện tập</a>
+            </div>
+            <div class="col-md-3">
+                <div class="footer-section-title">Cho Giáo viên</div>
+                <a href="#" class="footer-link">Tạo lớp học</a>
+                <a href="#" class="footer-link">Tạo đề thi AI</a>
+                <a href="#" class="footer-link">Quản lý học sinh</a>
+                <a href="#" class="footer-link">Xem phân tích</a>
+            </div>
+            <div class="col-md-3">
+                <div class="footer-section-title">Hỗ trợ</div>
+                <a href="#" class="footer-link">Hướng dẫn sử dụng</a>
+                <a href="#" class="footer-link">Câu hỏi thường gặp</a>
+                <a href="#" class="footer-link">Liên hệ chúng tôi</a>
+                <a href="#" class="footer-link">Chính sách bảo mật</a>
+            </div>
+        </div>
+        <div class="nvh-footer-divider"></div>
+        <div class="nvh-footer-bottom">
+            <div class="footer-copyright">
+                <p class="mb-0">© 2026 Nguyễn Văn Huyên Learning. Tất cả quyền được bảo lưu.</p>
+            </div>
+            <div class="footer-social">
+                <a href="#" title="Facebook"><i class="bi bi-facebook"></i></a>
+                <a href="#" title="Instagram"><i class="bi bi-instagram"></i></a>
+                <a href="#" title="Email"><i class="bi bi-envelope"></i></a>
+            </div>
+        </div>
+    </div>
+</footer>
+
+{% endblock %}

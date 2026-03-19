@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+{% block title %}Làm bài – Nguyễn Văn Huyên Learning{% endblock %}
+{% block content %}
+<div style="min-height:100vh;background:var(--color-bg);">
+    <!-- Loading State -->
+    <div id="loadingState" class="text-center py-5">
+        <div class="spinner-grow text-primary" role="status"></div>
+        <p class="mt-3 text-muted small">Đang kiểm tra thông tin bài thi...</p>
+    </div>
+
+    <!-- Intro State -->
+    <div id="introState" style="display:none; align-items:center; justify-content:center; min-height:85vh;">
+        <div style="max-width:520px;width:100%;margin:2rem auto;padding:0 1rem;">
+            <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-xl);overflow:hidden;box-shadow:var(--shadow-lg);">
+                <div style="background:linear-gradient(135deg,var(--color-primary),var(--color-secondary));padding:2.5rem;text-align:center;">
+                    <div style="width:72px;height:72px;background:rgba(255,255,255,0.15);border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:2rem;margin:0 auto 1.25rem;color:#fff;"><i class="bi bi-file-earmark-text-fill"></i></div>
+                    <h2 id="introTitle" style="color:#fff;font-size:1.4rem;font-weight:800;margin-bottom:0.5rem;"></h2>
+                    <p id="introDesc" style="color:rgba(255,255,255,0.75);font-size:0.875rem;margin:0;"></p>
+                </div>
+                <div style="padding:2rem;">
+                    <div class="d-flex gap-3 justify-content-center mb-4">
+                        <div style="text-align:center;background:var(--color-primary-light);border-radius:var(--radius-md);padding:1rem 1.5rem;">
+                            <div style="font-size:1.5rem;font-weight:800;color:var(--color-primary);" id="introDuration"></div>
+                            <div style="font-size:0.72rem;color:var(--color-muted);font-weight:500;text-transform:uppercase;letter-spacing:0.05em;">Phút</div>
+                        </div>
+                        <div style="text-align:center;background:var(--color-success-light);border-radius:var(--radius-md);padding:1rem 1.5rem;">
+                            <div style="font-size:1.5rem;font-weight:800;color:var(--color-success);" id="introCount"></div>
+                            <div style="font-size:0.72rem;color:var(--color-muted);font-weight:500;text-transform:uppercase;letter-spacing:0.05em;">Câu hỏi</div>
+                        </div>
+                    </div>
+                    <div style="background:var(--color-warning-light);border:1px solid var(--color-warning);border-radius:var(--radius-md);padding:1rem;margin-bottom:1.5rem;font-size:0.82rem;">
+                        <strong><i class="bi bi-exclamation-triangle-fill me-1" style="color:var(--color-warning);"></i>Lưu ý:</strong>
+                        <ul style="margin:0.5rem 0 0 1rem;padding:0;line-height:1.8;">
+                            <li>Bài thi chỉ được làm <strong>1 lần duy nhất</strong>.</li>
+                            <li>Đảm bảo kết nối mạng liên tục trong khi làm bài.</li>
+                            <li>Hệ thống tự động nộp khi hết giờ.</li>
+                        </ul>
+                    </div>
+                    <button class="btn btn-primary w-100 py-2" onclick="startQuiz()" style="font-size:1rem;font-weight:700;">
+                        <i class="bi bi-play-circle-fill me-2"></i> Bắt đầu làm bài
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quiz State -->
+    <div id="quizState" style="display:none;">
+        <!-- Top bar -->
+        <div style="background:var(--color-surface);border-bottom:1px solid var(--color-border);padding:0.875rem 1.5rem;display:flex;align-items:center;gap:1rem;position:sticky;top:56px;z-index:100;">
+            <h6 id="activeQuizTitle" style="margin:0;font-weight:700;flex:1;font-size:0.925rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></h6>
+            <!-- Progress -->
+            <div style="flex:2;max-width:300px;">
+                <div class="d-flex justify-content-between mb-1" style="font-size:0.72rem;color:var(--color-muted);">
+                    <span>Tiến độ</span>
+                    <span><strong id="answeredCount">0</strong>/<span id="totalQCount">0</span> câu</span>
+                </div>
+                <div class="quiz-progress-bar"><div id="progressFill" class="quiz-progress-fill" style="width:0%;"></div></div>
+            </div>
+            <!-- Timer -->
+            <div style="display:flex;align-items:center;gap:0.5rem;background:var(--color-primary-light);border-radius:var(--radius-md);padding:0.5rem 1rem;">
+                <i class="bi bi-clock-fill" style="color:var(--color-primary);font-size:0.875rem;"></i>
+                <span id="timerDisplay" style="font-size:1.1rem;font-weight:800;color:var(--color-primary);font-variant-numeric:tabular-nums;min-width:44px;">--:--</span>
+            </div>
+            <button id="submitExamBtn" class="btn btn-danger btn-sm fw-bold" onclick="promptSubmit()" style="white-space:nowrap;">
+                <i class="bi bi-send-check me-1"></i> Nộp bài
+            </button>
+        </div>
+
+        <div class="container py-4">
+            <div class="row g-4">
+                <!-- Questions -->
+                <div class="col-lg-8">
+                    <div id="questionsContainer" class="d-flex flex-column gap-4 pb-5"></div>
+                </div>
+                <!-- Question Navigator Sidebar -->
+                <div class="col-lg-4">
+                    <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:1.25rem;position:sticky;top:128px;">
+                        <div class="section-label mb-3">Điều hướng câu hỏi</div>
+                        <div id="questionNav" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;"></div>
+                        <div style="font-size:0.72rem;color:var(--color-muted);">
+                            <span style="display:inline-flex;align-items:center;gap:0.35rem;margin-right:1rem;"><span style="width:12px;height:12px;border-radius:3px;background:var(--color-success);display:inline-block;"></span>Đã trả lời</span>
+                            <span style="display:inline-flex;align-items:center;gap:0.35rem;"><span style="width:12px;height:12px;border-radius:3px;background:var(--color-border);display:inline-block;"></span>Chưa trả lời</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Result State -->
+    <div id="resultState" style="display:none;align-items:center;justify-content:center;min-height:85vh;">
+        <div style="max-width:440px;width:100%;margin:auto;padding:0 1rem;">
+            <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-xl);overflow:hidden;box-shadow:var(--shadow-lg);text-align:center;">
+                <div style="background:linear-gradient(135deg,var(--color-success),#0ea5e9);padding:2.5rem;">
+                    <div style="width:72px;height:72px;background:rgba(255,255,255,0.2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:2.5rem;margin:0 auto 1rem;color:#fff;"><i class="bi bi-check2-circle"></i></div>
+                    <h2 style="color:#fff;font-weight:800;font-size:1.4rem;margin:0;">Hoàn thành bài thi!</h2>
+                </div>
+                <div style="padding:2rem;">
+                    <div style="background:var(--color-bg);border-radius:var(--radius-lg);padding:1.5rem;margin-bottom:1.5rem;">
+                        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-muted);margin-bottom:0.5rem;">Điểm tổng kết</div>
+                        <div style="font-size:3.5rem;font-weight:800;color:var(--color-primary);line-height:1;letter-spacing:-0.04em;"><span id="finalScore">0</span><span style="font-size:1.25rem;color:var(--color-muted);font-weight:500;">/10</span></div>
+                        <div style="font-size:0.78rem;color:var(--color-muted);margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--color-border);">Điểm đã được ghi nhận và gửi cho giáo viên.</div>
+                    </div>
+                    <a href="/classes/" class="btn btn-outline-primary w-100 mb-2"><i class="bi bi-collection me-2"></i>Về danh sách lớp</a>
+                    <a href="/dashboard/" class="btn btn-light w-100"><i class="bi bi-house me-2"></i>Dashboard</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Submit Confirm Modal -->
+<div class="modal fade" id="submitConfirmModal" tabindex="-1">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center p-4">
+                <div style="width:56px;height:56px;border-radius:50%;background:var(--color-warning-light);display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:1.5rem;color:var(--color-warning);"><i class="bi bi-send-check-fill"></i></div>
+                <h5 class="fw-bold">Nộp bài ngay?</h5>
+                <p class="text-muted small" id="submitWarnText"></p>
+            </div>
+            <div class="modal-footer justify-content-center gap-2 border-0 pb-4">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Trở lại</button>
+                <button type="button" class="btn btn-danger" onclick="submitExam(false)"><i class="bi bi-send-fill me-1"></i>Nộp bài</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const quizId = "{{ quiz_id }}";
+</script>
+<script src="/static/js/quiz_taker.js"></script>
+
+<style>
+.tf-btn { cursor: pointer; transition: var(--transition); }
+.tf-btn.active { color: #fff !important; }
+</style>
+{% endblock %}

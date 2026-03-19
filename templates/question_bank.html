@@ -1,0 +1,201 @@
+{% extends 'base.html' %}
+{% block title %}Ngân hàng Câu hỏi – Nguyễn Văn Huyên Learning{% endblock %}
+{% block content %}
+<div class="container py-4">
+    <!-- Header -->
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+        <div>
+            <h1 style="font-size:1.5rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.25rem;">
+                <i class="bi bi-bank2" style="color:var(--color-primary);margin-right:0.5rem;"></i>Ngân hàng Câu hỏi
+            </h1>
+            <p class="text-muted small mb-0">Quản lý, chỉnh sửa và tạo mới câu hỏi dùng chung cho các đề thi.</p>
+        </div>
+        <button class="btn btn-primary" onclick="openCreateModal()">
+            <i class="bi bi-plus-circle me-1"></i>Thêm câu hỏi mới
+        </button>
+    </div>
+
+    <!-- Filters -->
+    <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:1.25rem 1.5rem;margin-bottom:1.5rem;">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label small fw-medium mb-1">Môn học</label>
+                <select id="filterSubject" class="form-select" onchange="loadQuestions()">
+                    <option value="">Tất cả môn học</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-medium mb-1">Độ khó</label>
+                <select id="filterDiff" class="form-select" onchange="loadQuestions()">
+                    <option value="">Tất cả</option>
+                    <option value="easy">Dễ</option>
+                    <option value="medium">Vừa</option>
+                    <option value="hard">Khó</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-medium mb-1">Dạng câu hỏi</label>
+                <select id="filterType" class="form-select" onchange="loadQuestions()">
+                    <option value="">Tất cả</option>
+                    <option value="multiple_choice">Trắc nghiệm</option>
+                    <option value="true_false">Đúng/Sai</option>
+                    <option value="short_answer">Trả lời ngắn</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-medium mb-1">Trạng thái</label>
+                <select id="filterStatus" class="form-select" onchange="loadQuestions()">
+                    <option value="">Tất cả</option>
+                    <option value="needs_review">Cần cập nhật đáp án</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small fw-medium mb-1">Tìm kiếm</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-white border-end-0"><i class="bi bi-search"></i></span>
+                    <input type="text" id="filterSearch" class="form-control border-start-0" placeholder="Nhập nội dung câu hỏi..." onkeyup="debounceSearch()">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Actions Toolbar -->
+    <div id="bulkActionsToolbar" class="mb-3 px-3 py-2 bg-light border rounded d-flex align-items-center justify-content-between" style="display: none !important;">
+        <div class="d-flex align-items-center">
+            <div class="form-check me-3">
+                <input class="form-check-input" type="checkbox" id="selectAllQuestions" onclick="toggleSelectAll(this.checked)">
+                <label class="form-check-label small fw-bold" for="selectAllQuestions">Chọn tất cả</label>
+            </div>
+            <span id="selectedCount" class="small text-primary fw-bold">0 đã chọn</span>
+        </div>
+        <button class="btn btn-sm btn-outline-danger" onclick="bulkDeleteQuestions()">
+            <i class="bi bi-trash me-1"></i>Xoá đã chọn
+        </button>
+    </div>
+
+    <!-- Question List -->
+    <div id="loading" class="text-center py-5">
+        <div class="spinner-grow text-primary" role="status"></div>
+        <p class="text-muted small mt-3">Đang tải câu hỏi...</p>
+    </div>
+    <div id="questionList" class="row g-3" style="display: none;"></div>
+
+</div>
+
+<!-- Modal Create/Edit Question -->
+<div class="modal fade" id="questionModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="questionModalTitle">Thêm Câu hỏi mới</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body bg-light">
+                <form id="questionForm">
+                    <input type="hidden" id="qId">
+                    
+                    <div class="row g-4">
+                        <div class="col-md-8">
+                            <div class="card border-0 shadow-sm h-100">
+                                <div class="card-body">
+                                    <div class="row mb-3">
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-bold">Môn học <span class="text-danger">*</span></label>
+                                            <select id="qSubject" class="form-select form-select-sm" required></select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-bold">Độ khó</label>
+                                            <select id="qDiff" class="form-select form-select-sm">
+                                                <option value="easy">Dễ</option>
+                                                <option value="medium" selected>Trung bình</option>
+                                                <option value="hard">Khó</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-bold">Dạng câu hỏi</label>
+                                            <select id="qType" class="form-select form-select-sm" onchange="toggleOptionFields()">
+                                                <option value="multiple_choice">1 Lựa chọn đúng (A/B/C/D)</option>
+                                                <option value="true_false">Câu hỏi Đúng/Sai (A/B/C/D độc lập)</option>
+                                                <option value="short_answer">Trả lời ngắn (Điền từ)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label fw-bold">Nội dung câu hỏi</label>
+                                        <textarea id="qText" name="qText"></textarea>
+                                    </div>
+                                    <div class="mb-3" id="qContextWrapper" style="display: none;">
+                                        <label class="form-label fw-bold">Ngữ cảnh (dùng cho dạng Đúng/Sai)</label>
+                                        <textarea id="qContext" class="form-control" rows="3" placeholder="Nhập đoạn văn, ngữ cảnh chung cho 4 câu hỏi con..."></textarea>
+                                    </div>
+                                    <div class="px-3 py-2 bg-light border rounded mb-3">
+                                        <p class="small text-muted mb-1"><i class="bi bi-info-circle me-1"></i><strong>Mẹo soạn thảo:</strong> Bạn có thể dán mã Markdown ảnh từ Kho sang đây.</p>
+                                    </div>
+                                    
+                                    <label class="form-label fw-bold mt-3 mb-2"><i class="bi bi-check2-square me-2"></i>Các phương án / Đáp án</label>
+                                    <div id="optionsContainer" class="bg-light p-3 rounded border">
+                                        <!-- Dynamic Content Rendered by JS -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="card border-0 shadow-sm mb-4">
+                                <div class="card-header bg-white fw-bold"><i class="bi bi-images me-2"></i>Kho ảnh đính kèm</div>
+                                <div class="card-body">
+                                    <p class="small text-muted mb-2">Tải ảnh lên và lấy Link để chèn vào Nội dung hoặc Phương án.</p>
+                                    <div class="mb-3">
+                                        <input type="file" id="qImageFile" class="form-control form-control-sm" accept="image/*">
+                                    </div>
+                                    <button class="btn btn-sm btn-primary w-100 mb-3" type="button" onclick="uploadQuestionImage()">
+                                        <i class="bi bi-cloud-upload me-1"></i>Tải ảnh lên Kho
+                                    </button>
+                                    
+                                    <!-- Hidden inputs for legacy API compatibility -->
+                                    <input type="hidden" id="qImageSourceType" value="user_upload">
+                                    <input type="hidden" id="qImagePlacementSelect" value="gallery">
+                                    <input type="hidden" id="qImageNote" value="">
+                                    
+                                    <div id="questionImageStatus" class="small mb-2"></div>
+                                    <div id="questionImageList" class="border rounded p-2" style="max-height: 380px; overflow-y: auto; background: #fafafa;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-primary" id="btnSaveQuestion" onclick="saveQuestion()">Lưu câu hỏi</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Edit Options Quickly -->
+<div class="modal fade" id="quickReviewModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title text-dark"><i class="bi bi-exclamation-triangle me-2"></i>Chưa định đáp án</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted mb-3">Câu hỏi chưa được thiết lập đáp án đúng. Vui lòng chọn bên dưới:</p>
+                <div id="quickReviewContent"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="saveQuickReview()">Cập nhật ngay</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- EasyMDE / SimpleMDE -->
+<link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">
+<script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
+
+<script src="/static/js/question_bank.js"></script>
+{% endblock %}

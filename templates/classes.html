@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+{% block title %}Lớp học – Nguyễn Văn Huyên Learning{% endblock %}
+{% block content %}
+<div class="container py-4">
+    <!-- Header -->
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+        <div>
+            <h1 style="font-size:1.5rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.25rem;">
+                <i class="bi bi-collection-fill" style="color:var(--color-primary);margin-right:0.5rem;"></i>
+                <span id="pageTitle">Lớp học</span>
+            </h1>
+            <p class="text-muted small mb-0" id="pageSubtitle">Quản lý và theo dõi các lớp học của bạn</p>
+        </div>
+        <div class="d-flex gap-2">
+            <!-- Teacher: Create class -->
+            <button class="btn btn-primary d-none" id="btnCreateClass" data-bs-toggle="modal" data-bs-target="#createClassModal">
+                <i class="bi bi-plus-circle me-1"></i> Tạo lớp mới
+            </button>
+            <!-- Student: Join class -->
+            <button class="btn btn-success d-none" id="btnJoinClass" data-bs-toggle="modal" data-bs-target="#joinClassModal">
+                <i class="bi bi-door-open me-1"></i> Tham gia lớp
+            </button>
+        </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="classesLoading" class="text-center py-5">
+        <div class="spinner-grow text-primary"></div>
+        <p class="text-muted mt-3 small">Đang tải danh sách lớp...</p>
+    </div>
+
+    <!-- Class Grid -->
+    <div id="classList" class="row g-3" style="display:none;"></div>
+
+    <!-- Empty State -->
+    <div id="noClassMsg" class="empty-state" style="display:none;">
+        <div class="empty-icon"><i class="bi bi-journal-x"></i></div>
+        <div class="empty-title">Chưa có lớp học nào</div>
+        <p class="empty-desc" id="noClassText">Bạn chưa tham gia hoặc tạo lớp nào.</p>
+    </div>
+</div>
+
+<!-- Modal: Tạo lớp (Teacher) -->
+<div class="modal fade" id="createClassModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold"><i class="bi bi-plus-circle-fill text-primary me-2"></i>Tạo lớp học mới</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form id="createClassForm">
+                    <div class="mb-3">
+                        <label class="form-label fw-medium">Tên lớp <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="className" required placeholder="VD: Toán 12A1">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-medium">Môn học <span class="text-danger">*</span></label>
+                        <select class="form-select" id="subjectSelect" required>
+                            <option value="">-- Chọn môn học --</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label fw-medium">Mô tả <span class="text-muted fw-normal">(tuỳ chọn)</span></label>
+                        <textarea class="form-control" id="classDesc" rows="2" placeholder="Mô tả ngắn về lớp học..."></textarea>
+                    </div>
+                    <div id="createClassError" class="text-danger small mt-1"></div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-primary" onclick="submitCreateClass()">
+                    <i class="bi bi-plus-circle me-1"></i> Tạo lớp
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Tham gia lớp (Student) -->
+<div class="modal fade" id="joinClassModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold"><i class="bi bi-door-open-fill text-success me-2"></i>Tham gia lớp học</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <p class="text-muted small mb-3">Nhập mã lớp do giáo viên cung cấp để tham gia.</p>
+                <input type="text" class="form-control text-center fw-bold fs-5" id="inviteCode" maxlength="8" placeholder="XXXXXXXX" style="letter-spacing:4px;border-radius:var(--radius-md);">
+                <div id="joinError" class="text-danger small mt-2"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-success" onclick="submitJoinClass()">
+                    <i class="bi bi-door-open me-1"></i> Tham gia
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/classes.js"></script>
+{% endblock %}
