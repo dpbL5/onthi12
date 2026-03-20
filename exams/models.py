@@ -59,6 +59,10 @@ class Question(models.Model):
         max_length=500, blank=True, null=True,
         help_text="Đáp án đúng dạng text (dùng cho dạng Trả lời ngắn)."
     )
+    explanation = models.TextField(
+        blank=True, null=True,
+        help_text="Lời giải thích chi tiết cho toàn bộ câu hỏi."
+    )
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='questions')
     difficulty = models.CharField(max_length=10, choices=DIFFICULTY_CHOICES, default='medium')
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_questions')

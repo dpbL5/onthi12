@@ -48,6 +48,25 @@ async function init() {
             qSub.add(new Option(s.name, s.id));
         });
 
+        const classRes = await fetch('/api/classes/', { headers: authHeaders() });
+        if (classRes.ok) {
+            const classData = await classRes.json();
+            const ragClassSelect = document.getElementById('ragClass');
+            if (ragClassSelect && Array.isArray(classData)) {
+                classData.forEach(c => {
+                    ragClassSelect.add(new Option(c.name, c.id));
+                });
+            }
+        }
+
+        // Bắt sự kiện thay đổi Lớp học ⇒ tải danh sách Tài liệu
+        const ragClassEl = document.getElementById('ragClass');
+        if (ragClassEl) {
+            ragClassEl.addEventListener('change', async () => {
+                await loadRagDocuments(ragClassEl.value);
+            });
+        }
+
         mde = new EasyMDE({
             element: document.getElementById('qText'),
             spellChecker: false,
@@ -375,7 +394,7 @@ function openCreateModal() {
     currentEditId = null;
     currentQuestionImages = [];
     document.getElementById('questionForm').reset();
-    document.getElementById('questionModalTitle').innerText = 'Thêm Câu hỏi mới';
+    document.getElementById('questionModalTitle').innerText = 'Tạo câu hỏi thủ công';
     mde.value('');
     document.getElementById('qType').value = 'multiple_choice';
     document.getElementById('questionImageStatus').innerHTML = '<span class="text-muted">Lưu câu hỏi trước, sau đó gắn ảnh.</span>';
@@ -882,6 +901,33 @@ function getOptionDisplayText(o) {
     return blocksToText(o?.content_json || []);
 }
 
+// ─── RAG: Tải danh sách Tài liệu khi chọn Lớp học ───
+async function loadRagDocuments(classId) {
+    const wrap = document.getElementById('ragDocumentWrap');
+    const sel = document.getElementById('ragDocument');
+    const status = document.getElementById('ragDocumentStatus');
+    if (!wrap || !sel || !classId) return;
+
+    // Reset
+    sel.innerHTML = '<option value="">Toàn bộ tài liệu trong lớp</option>';
+    status.textContent = 'Đang tải danh sách tài liệu...';
+    wrap.style.display = 'block';
+
+    try {
+        const res = await fetch(`/api/ai/classes/${classId}/documents/`, { headers: authHeaders() });
+        if (!res.ok) { status.textContent = 'Không thể tải tài liệu.'; return; }
+        const docs = await res.json();
+        if (Array.isArray(docs) && docs.length > 0) {
+            docs.forEach(d => sel.add(new Option(d.title || d.file_path, d.id)));
+            status.textContent = `Đã tải ${docs.length} tài liệu.`;
+        } else {
+            status.textContent = 'Lớp học này chưa có tài liệu nào.';
+        }
+    } catch (e) {
+        status.textContent = 'Lỗi kết nối.';
+    }
+}
+
 function hasConfiguredAnswer(q) {
     const type = q?.question_type || 'multiple_choice';
     if (type === 'short_answer') return !!(q?.correct_answer_text && String(q.correct_answer_text).trim());
@@ -1156,8 +1202,9 @@ document.getElementById('ragGenerateForm').addEventListener('submit', async func
     const count = document.getElementById('ragCount').value;
     const difficulty = document.getElementById('ragDifficulty').value;
     const questionTypes = document.getElementById('ragQuestionTypes').value;
+    const classId = document.getElementById('ragClass').value;
 
-    if (!topic) return;
+    if (!topic || !classId) return;
 
     const btn = document.getElementById('btnGenerateRAG');
     const loader = document.getElementById('ragLoading');
@@ -1185,10 +1232,12 @@ document.getElementById('ragGenerateForm').addEventListener('submit', async func
             method: 'POST',
             headers: authHeaders(),
             body: JSON.stringify({
+                class_id: classId,
                 topic: topic,
                 count: parseInt(count),
                 difficulty: difficulty,
                 question_types: questionTypes,
+                document_id: document.getElementById('ragDocument')?.value || null,
             })
         });
 

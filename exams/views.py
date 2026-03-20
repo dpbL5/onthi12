@@ -16,6 +16,21 @@ import hashlib
 import os
 
 
+def rebalance_quiz_question_points(quiz):
+    quiz_questions = list(
+        QuizQuestion.objects.filter(quiz=quiz).order_by('order')
+    )
+    total_questions = len(quiz_questions)
+    if total_questions == 0:
+        return
+
+    points_per_question = round(10.0 / total_questions, 2)
+    for qq in quiz_questions:
+        qq.points = points_per_question
+
+    QuizQuestion.objects.bulk_update(quiz_questions, ['points'])
+
+
 class IsTeacherOrAdmin(permissions.BasePermission):
     def has_permission(self, request, view):
         role_name = getattr(request.user.role, 'name', None)
@@ -483,7 +498,8 @@ class QuizQuestionListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         quiz_id = self.kwargs.get('quiz_id')
-        serializer.save(quiz_id=quiz_id)
+        quiz_question = serializer.save(quiz_id=quiz_id)
+        rebalance_quiz_question_points(quiz_question.quiz)
 
 
 class QuizQuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -494,6 +510,15 @@ class QuizQuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
     )
     serializer_class = QuizQuestionSerializer
     permission_classes = [permissions.IsAuthenticated, IsTeacherOrAdmin]
+
+    def perform_update(self, serializer):
+        quiz_question = serializer.save()
+        rebalance_quiz_question_points(quiz_question.quiz)
+
+    def perform_destroy(self, instance):
+        quiz = instance.quiz
+        instance.delete()
+        rebalance_quiz_question_points(quiz)
 
 
 # ─── STUDENT: Take Exam ─────────────────────────────────────────────────────

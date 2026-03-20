@@ -1,13 +1,26 @@
 import os
+import hashlib
 from typing import Any, Dict, List
 
 from google import genai
 
+try:
+    from django.core.cache import cache as django_cache
+except Exception:
+    django_cache = None
+
 API_KEY = os.environ.get('GEMINI_API_KEY')
-DEFAULT_MODEL = os.environ.get('GEMINI_MODEL_NAME', 'gemini-2.5-flash')
+DEFAULT_MODEL = os.environ.get('GEMINI_MODEL_NAME', 'gemini-2.0-flash')
 _EMBED_MODEL = os.environ.get('GEMINI_EMBED_MODEL', 'gemini-embedding-001')
+EMBED_CACHE_TTL = int(os.environ.get('GEMINI_EMBED_CACHE_TTL', '21600'))
 
 _client = genai.Client(api_key=API_KEY) if API_KEY else None
+
+
+def _make_embed_cache_key(model: str, task_type: str, output_dimensionality: int, content: str) -> str:
+    payload = f"{model}|{task_type}|{output_dimensionality}|{content}"
+    digest = hashlib.sha256(payload.encode('utf-8')).hexdigest()
+    return f"gemini:embed:{digest}"
 
 
 def is_configured() -> bool:
@@ -30,12 +43,32 @@ def generate_content(contents: Any, model: str | None = None, config: Dict[str, 
     return _client.models.generate_content(**kwargs)
 
 
-def embed_content(content: str, task_type: str, output_dimensionality: int = 768, model: str | None = None) -> List[float]:
+def embed_content(
+    content: str,
+    task_type: str,
+    output_dimensionality: int = 768,
+    model: str | None = None,
+    use_cache: bool = True,
+    cache_ttl: int | None = None,
+) -> List[float]:
     if _client is None:
         raise ValueError('GEMINI_API_KEY is not configured.')
 
+    selected_model = model or _EMBED_MODEL
+
+    if use_cache and django_cache is not None:
+        cache_key = _make_embed_cache_key(
+            model=selected_model,
+            task_type=task_type,
+            output_dimensionality=output_dimensionality,
+            content=content,
+        )
+        cached_vector = django_cache.get(cache_key)
+        if isinstance(cached_vector, list) and cached_vector:
+            return cached_vector
+
     response = _client.models.embed_content(
-        model=model or _EMBED_MODEL,
+        model=selected_model,
         contents=content,
         config={
             'task_type': task_type,
@@ -46,7 +79,13 @@ def embed_content(content: str, task_type: str, output_dimensionality: int = 768
     if not response.embeddings:
         raise ValueError('Embedding response is empty.')
 
-    return list(response.embeddings[0].values)
+    vector = list(response.embeddings[0].values)
+
+    if use_cache and django_cache is not None:
+        ttl = EMBED_CACHE_TTL if cache_ttl is None else cache_ttl
+        django_cache.set(cache_key, vector, timeout=ttl)
+
+    return vector
 
 
 def upload_file(path: str):

@@ -15,7 +15,7 @@
                 <i class="bi bi-stars me-1"></i>Tạo bằng AI
             </button>
             <button class="btn btn-primary" onclick="openCreateModal()">
-                <i class="bi bi-plus-circle me-1"></i>Thêm câu hỏi mới
+                <i class="bi bi-plus-circle me-1"></i>Tạo câu hỏi thủ công
             </button>
         </div>
     </div>
@@ -92,7 +92,7 @@
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content border-0 shadow">
             <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title" id="questionModalTitle">Thêm Câu hỏi mới</h5>
+                <h5 class="modal-title" id="questionModalTitle">Tạo câu hỏi thủ công</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body bg-light">
@@ -198,137 +198,7 @@
     </div>
 </div>
 
-<!-- Modal: AI Generator -->
-<div class="modal fade" id="aiGeneratorModal" tabindex="-1" data-bs-backdrop="static">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title"><i class="bi bi-stars me-2"></i>Trợ lý AI Tạo Câu Hỏi</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body p-0">
-                <ul class="nav nav-tabs px-3 pt-3 bg-light" id="aiTabs">
-                    <li class="nav-item">
-                        <button class="nav-link active fw-bold" id="ai-file-tab" data-bs-toggle="tab" data-bs-target="#aiFileContent">
-                            <i class="bi bi-file-earmark-arrow-up me-1"></i>Trích xuất từ Tệp tài liệu
-                        </button>
-                    </li>
-                    <li class="nav-item">
-                        <button class="nav-link fw-bold" id="ai-rag-tab" data-bs-toggle="tab" data-bs-target="#aiRagContent">
-                            <i class="bi bi-database-check me-1"></i>Sinh từ Tri thức Nội bộ
-                        </button>
-                    </li>
-                </ul>
-                <div class="tab-content" id="aiTabContent">
-                    <!-- Tab 1: File Extraction -->
-                    <div class="tab-pane fade show active p-4" id="aiFileContent">
-                        <div class="row g-4">
-                            <div class="col-md-4 border-end">
-                                <h6 class="fw-bold mb-3">Tải lên tệp tài liệu</h6>
-                                <p class="small text-muted mb-3">Hỗ trợ PDF, DOCX, Ảnh (.png, .jpg). AI tự động nhận dạng 3 dạng câu hỏi THPT 2025.</p>
-                                <form id="aiExtractForm">
-                                    <div class="mb-3">
-                                        <input class="form-control" type="file" id="aiFileInput" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" required>
-                                    </div>
-                                    <button type="submit" class="btn btn-primary w-100" id="btnExtractAI">
-                                        <i class="bi bi-magic me-1"></i>Bắt đầu Trích xuất
-                                    </button>
-                                </form>
-                                <div id="aiExtractLoading" class="mt-4 text-center" style="display:none">
-                                    <div class="spinner-border text-primary" role="status"></div>
-                                    <p class="mt-2 small text-muted">AI đang đọc tài liệu và phân tích. Vui lòng chờ vài giây...</p>
-                                </div>
-                                <div id="aiExtractError" class="mt-3 text-danger small"></div>
-                            </div>
-                            <div class="col-md-8">
-                                <div class="d-flex justify-content-between align-items-center mb-3">
-                                    <h6 class="fw-bold mb-0">Kết quả Trích xuất (Dạng Nháp)</h6>
-                                    <div>
-                                        <button class="btn btn-sm btn-outline-secondary me-2" onclick="selectAllDrafts('file')">Chọn tất cả</button>
-                                        <button class="btn btn-sm btn-success" id="btnSaveDraftsFile" onclick="saveSelectedDrafts('file')" style="display:none">
-                                            <i class="bi bi-cloud-arrow-up me-1"></i>Lưu các câu đã chọn
-                                        </button>
-                                    </div>
-                                </div>
-                                <div id="aiDraftBoardFile" class="ai-draft-board p-3 bg-light rounded">
-                                    <div class="text-center text-muted mt-5">
-                                        <i class="bi bi-layout-text-window-reverse fs-1 d-block mb-3"></i>
-                                        Bản xem trước câu hỏi do AI trích xuất sẽ hiển thị tại đây.
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- Tab 2: RAG Generation -->
-                    <div class="tab-pane fade p-4" id="aiRagContent">
-                        <div class="row g-4">
-                            <div class="col-md-4 border-end">
-                                <h6 class="fw-bold mb-3"><i class="bi bi-database-check text-success me-1"></i>Sinh câu hỏi từ Tri thức Nội bộ</h6>
-                                <p class="small text-muted mb-3">
-                                    AI sẽ đọc tài liệu đã upload vào lớp học và tự động tạo câu hỏi dựa trên nội dung tài liệu.
-                                </p>
-                                <form id="ragGenerateForm">
-                                    <div class="mb-3">
-                                        <label class="form-label fw-bold small">Chủ đề / Phạm vi</label>
-                                        <input type="text" class="form-control" id="ragTopic" placeholder="VD: Ester, mạng máy tính, trí tuệ nhân tạo..." required>
-                                    </div>
-                                    <div class="row g-2 mb-3">
-                                        <div class="col-6">
-                                            <label class="form-label fw-bold small">Số lượng câu</label>
-                                            <input type="number" class="form-control" id="ragCount" value="5" min="1" max="20">
-                                        </div>
-                                        <div class="col-6">
-                                            <label class="form-label fw-bold small">Độ khó</label>
-                                            <select class="form-select" id="ragDifficulty">
-                                                <option value="easy">Dễ</option>
-                                                <option value="medium" selected>Vừa</option>
-                                                <option value="hard">Khó</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label class="form-label fw-bold small">Dạng câu hỏi muốn tạo</label>
-                                        <select class="form-select" id="ragQuestionTypes">
-                                            <option value="multiple_choice">Trắc nghiệm (chọn 1/4)</option>
-                                            <option value="true_false">Đúng / Sai</option>
-                                            <option value="short_answer">Trả lời ngắn</option>
-                                            <option value="multiple_choice, true_false" selected>Hỗn hợp (Trắc nghiệm + Đ/S)</option>
-                                            <option value="multiple_choice, true_false, short_answer">Tất cả dạng</option>
-                                        </select>
-                                    </div>
-                                    <button type="submit" class="btn btn-success w-100" id="btnGenerateRAG">
-                                        <i class="bi bi-cpu me-1"></i>Sinh Câu Hỏi từ Tri thức
-                                    </button>
-                                </form>
-                                <div id="ragLoading" class="mt-4 text-center" style="display:none">
-                                    <div class="spinner-border text-success" role="status"></div>
-                                    <p class="mt-2 small text-muted">AI đang đọc tri thức nội bộ và tạo câu hỏi...</p>
-                                </div>
-                                <div id="ragError" class="mt-3 text-danger small"></div>
-                            </div>
-                            <div class="col-md-8">
-                                <div class="d-flex justify-content-between align-items-center mb-3">
-                                    <h6 class="fw-bold mb-0">Kết quả Sinh Câu Hỏi (Dạng Nháp)</h6>
-                                    <div>
-                                        <button class="btn btn-sm btn-outline-secondary me-2" onclick="selectAllDrafts('rag')">Chọn tất cả</button>
-                                        <button class="btn btn-sm btn-success" id="btnSaveDraftsRag" onclick="saveSelectedDrafts('rag')" style="display:none">
-                                            <i class="bi bi-cloud-arrow-up me-1"></i>Lưu các câu đã chọn
-                                        </button>
-                                    </div>
-                                </div>
-                                <div id="aiDraftBoardRag" class="ai-draft-board p-3 bg-light rounded">
-                                    <div class="text-center text-muted mt-5">
-                                        <i class="bi bi-database fs-1 d-block mb-3"></i>
-                                        Câu hỏi do AI sinh từ tri thức nội bộ sẽ hiển thị tại đây.
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-</div>
+{% include 'components/ai_generator_modal.html' %}
 {% endblock %}
 
 {% block scripts %}

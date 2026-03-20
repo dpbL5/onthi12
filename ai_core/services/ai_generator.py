@@ -6,84 +6,62 @@ import docx
 import uuid
 import re
 import time
+import hashlib
 from typing import List, Dict, Any
 from django.conf import settings
+from django.core.cache import cache
 from . import gemini_client
 
 # Ensure API key and model name are configured
 api_key = os.environ.get('GEMINI_API_KEY')
-model_name = os.environ.get('GEMINI_MODEL_NAME', gemini_client.get_default_model())
+RAG_GENERATION_MODEL = os.environ.get('GEMINI_MODEL_NAME', gemini_client.get_default_model())
+FILE_EXTRACTION_MODEL = os.environ.get('AI_EXTRACTION_MODEL_NAME', 'gemini-flash-latest')
 
 # Cấu hình generation ưu tiên output JSON ổn định và giảm biến thiên.
 GENERATION_CONFIG_JSON_STRICT = {
     'response_mime_type': 'application/json',
     'temperature': 0.1,
-    'max_output_tokens': 65536,
+    'max_output_tokens': 10000,
 }
 
 GENERATION_CONFIG_RAG = {
     'response_mime_type': 'application/json',
     'temperature': 0.2,
-    'max_output_tokens': 16384,
+    'max_output_tokens': 8192,
 }
 
 # Số blocks tối đa mỗi chunk khi gọi Gemini
 CHUNK_BLOCK_SIZE = 450
 # Nếu tất cả compact blocks <= ngưỡng này, gọp 1 lần gọi duy nhất
 SINGLE_SHOT_THRESHOLD = 500
+RAG_MAX_CONTEXT_CHARS = int(os.environ.get('AI_RAG_MAX_CONTEXT_CHARS', '5000'))
+RAG_MAX_CHUNK_CHARS = int(os.environ.get('AI_RAG_MAX_CHUNK_CHARS', '650'))
+RAG_CACHE_TTL_SECONDS = int(os.environ.get('AI_RAG_CACHE_TTL_SECONDS', '300'))
 
 # ─── Prompt: Trích xuất câu hỏi đa dạng từ tài liệu ────────────────────────
 EXTRACTION_PROMPT = """
-Bạn là hệ thống trích xuất dữ liệu bài tập (Data Extractor) cho nền tảng giáo dục.
-Nhiệm vụ: đọc nội dung tài liệu (dạng chuỗi content_blocks) và bóc tách ra toàn bộ CÂU HỎI, phân loại theo 3 dạng format đề thi THPT 2025:
+Bạn là hệ thống trích xuất dữ liệu bài tập (Data Extractor) cho nền tảng giáo dục. Đề thi theo định dạng THPT 2025.
+Nhiệm vụ: đọc nội dung tài liệu (dạng chuỗi content_blocks) và bóc tách ra toàn bộ CÂU HỎI.
 
-YÊU CẦU BẮT BUỘC: Phải trích xuất TẤT CẢ câu hỏi có trong tài liệu, không được dừng ở câu đầu tiên.
+YÊU CẦU BẮT BUỘC:
+1. Phải trích xuất TẤT CẢ câu hỏi có trong tài liệu, không được dừng ở câu đầu tiên.
+2. Về hình ảnh:
+   - CHỈ GIỮ LẠI các hình ảnh có ý nghĩa minh họa trực tiếp cho câu hỏi (ví dụ: đồ thị, bản đồ, hình học, sơ đồ thí nghiệm).
+   - BẮT BUỘC LOẠI BỎ: ảnh trang trí, logo, watermark, nút bấm, ô vuông báo điểm, viền khung, hoặc bất kỳ hình nào không phải nội dung học tập.
+   - Khi giữ lại hình ảnh, hãy đặt nguyên block `{"type": "image", "sha256": "..."}` vào trong mảng `content_json` (của câu hỏi hoặc phương án) đúng tại vị trí nó xuất hiện so với văn bản.
+3. Về đáp án: Dựa vào "Định dạng trực tiếp" (văn bản được highlight, gạch chân, đổi màu, in đậm không phải tiêu đề) hoặc "Bảng đáp án" phần cuối đề để xác định câu đúng.
 
-DẠNG 1 — multiple_choice (Trắc nghiệm chọn 1/4):
-  - Mỗi câu có 4 phương án A, B, C, D. Thí sinh chọn 1 đáp án đúng duy nhất.
+PHÂN LOẠI 3 DẠNG CÂU HỎI (THPT 2025):
+
+DẠNG 1 — multiple_choice (Trắc nghiệm 4 lựa chọn):
+- Có 4 phương án A, B, C, D. Gán `is_correct: true` cho phương án đúng, các phương án khác `false`.
 
 DẠNG 2 — true_false (Đúng/Sai):
-  - Có 1 ngữ cảnh chung (hình vẽ, sơ đồ, thí nghiệm, bài toán...).
-  - Kèm 4 phát biểu (a, b, c, d). Mỗi phát biểu là Đúng hoặc Sai riêng biệt.
+- Gồm 1 ngữ cảnh chung và 4 phát biểu a, b, c, d. Gán `is_correct: true/false` cho từng phát biểu riêng biệt.
 
 DẠNG 3 — short_answer (Trả lời ngắn):
-  - Thí sinh tính toán và điền kết quả. Không có phương án gợi ý.
-
-QUY TẮC ẢNH (RẤT QUAN TRỌNG):
-    - KHÔNG lấy hoặc KHÔNG giữ các ảnh KHÔNG LIÊN QUAN tới nội dung câu hỏi: các hình trang trí, watermark, khung/ô vuông để ghi đáp án, checkbox, hoặc các shape chỉ phục vụ bố cục.
-    - Chỉ giữ ảnh khi ảnh đó trực tiếp minh hoạ (đồ thị, sơ đồ, hình vẽ, ảnh thí nghiệm, mô tả hình học...).
-    - Nếu một ảnh chỉ biểu thị ô trống/ô đáp án hay là hình đánh dấu (ví dụ ô vuông để thí sinh gạch), hãy bỏ ảnh đó khỏi `content_json`.
-    - Nếu không chắc, ưu tiên loại bỏ ảnh trang trí hơn là giữ ảnh không liên quan.
-
-QUY TẮC BẮT BUỘC:
-1. Bạn sẽ nhận được MÃ NGUỒN CỦA TÀI LIỆU DƯỚI DẠNG MẢNG CÁC KHỐI (Blocks). Mỗi khối text có:
-     {"type": "text", "value": "...", "fmt": {"bold": true, "underline": true, "highlight": true, "highlight_color": "yellow", "color": "FF0000"}}
-   Mỗi khối ảnh có:
-     {"type": "image", "sha256": "..."}
-   Trường `fmt` chỉ xuất hiện khi có định dạng đặc biệt. Khi không có `fmt` nghĩa là text bình thường.
-
-2. NHẬN DIỆN ĐÁP ÁN ĐÚNG theo thứ tự ưu tiên sau:
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   [MỨC 1] Bảng đáp án cuối đề (Ưu tiên cao nhất):
-     - Nếu có block text dạng "[BẢNG ĐÁP ÁN]", đây là nguồn chính xác nhất.
-     - Ví dụ: | 1 | 2 | 3 | 4 | → | A | C | B | D |
-     - Phải dùng bảng này để gán đáp án đúng cho tất cả câu hỏi.
-
-   [MỨC 2] Định dạng trực quan của từng phương án:
-     - "underline": true → phương án đó CÓ THỂ là đáp án đúng (gạch chân).
-     - "highlight": true (bất kỳ màu gì) → phương án đó CÓ THỂ là đáp án đúng.
-     - "color" khác đen (ví dụ "FF0000" đỏ, "0070C0" xanh lam) → phương án đó CÓ THỂ là đáp án đúng.
-     - "bold": true ĐỨNG ĐỘC LẬP (không phải tiêu đề) → phương án đó CÓ THỂ là đáp án đúng.
-     - Nếu nhiều phương án cùng lúc có định dạng giống nhau (ví dụ: tất cả A,B,C,D đều bold), KHÔNG dùng làm tiêu chí.
-
-   [MỨC 3] Không xác định được:
-     - Nếu không có bảng đáp án, không có định dạng đặc biệt → đặt is_correct: false cho tất cả.
-
-3. Khi trả về JSON câu hỏi và phương án, sử dụng định dạng `content_json` (mảng blocks) y như đầu vào.
-   Ghép đúng các block image vào đúng vị trí của đoạn text mà nó kèm theo.
-   TRONG `content_json` OUTPUT, BỎ QUA trường `fmt` — chỉ giữ `type`, `value`, `sha256`.
-
-4. Trường `image` của question truyền thống bị huỷ bỏ, đẩy tất cả ảnh vào `content_json`.
+- Thí sinh tính toán và điền kết quả số.
+- BẮT BUỘC: Bạn phải tự trích xuất con số đáp án cuối cùng (nếu đề có ghi đáp án) và đưa ĐÚNG con số đó vào trường `correct_answer_text`. Tuyệt đối không để trống nếu đề có đáp án.
 
 OUTPUT FORMAT BẮT BUỘC (Trả về duy nhất JSON array, không kèm text/giải thích):
 [
@@ -96,26 +74,16 @@ OUTPUT FORMAT BẮT BUỘC (Trả về duy nhất JSON array, không kèm text/g
        {"type": "text", "value": " là gì?"}
     ],
     "options": [
-      {
-        "content_json": [ {"type": "text", "value": "Phương án A"} ], 
-        "is_correct": true
-      },
-      {
-        "content_json": [
-           {"type": "text", "value": "Phương án B kèm ảnh: "},
-           {"type": "image", "sha256": "b1b2...", "width_pt": 50, "height_pt": 10}
-        ], 
-        "is_correct": false
-      }
+      { "content_json": [ {"type": "text", "value": "Phương án A"} ], "is_correct": true }
     ]
   },
   {
     "question_type": "true_false",
     "difficulty": "hard",
-    "context": "Ngữ cảnh, mô tả...",
+    "context": "Ngữ cảnh thí nghiệm...",
     "content_json": [ {"type": "text", "value": "Xét các phát biểu:"} ],
     "options": [
-      {"content_json": [ {"type": "text", "value": "Phát biểu a: ..."} ], "is_correct": true}
+      { "content_json": [ {"type": "text", "value": "Phát biểu a: ..."} ], "is_correct": true }
     ]
   },
   {
@@ -126,9 +94,6 @@ OUTPUT FORMAT BẮT BUỘC (Trả về duy nhất JSON array, không kèm text/g
   }
 ]
 """
-
-# BỔ SUNG QUY TẮC ẢNH: KHÔNG lấy các ảnh trang trí/ô vuông/khung dành cho ghi đáp án.
-# Chỉ giữ ảnh có ý nghĩa thông tin (đồ thị, hình vẽ, sơ đồ). Nếu ảnh chỉ là ô để ghi đáp án hoặc ký hiệu layout, bỏ qua.
 
 
 
@@ -191,30 +156,38 @@ OUTPUT FORMAT:
 
 # ─── Prompt: Sinh câu hỏi từ tri thức nội bộ (RAG) ──────────────────────────
 RAG_GENERATION_PROMPT_TEMPLATE = """
-Bạn là hệ thống tạo câu hỏi tự động cho nền tảng giáo dục NVH Learning.
-Nhiệm vụ: dựa vào TÀI LIỆU TRÍCH XUẤT được cung cấp, tạo ra {count} câu hỏi chất lượng cao.
+Bạn là giáo viên chuyên môn và hệ thống tạo câu hỏi tự động cho NVH Learning.
+Nhiệm vụ: Dựa vào TÀI LIỆU TRÍCH XUẤT được cung cấp, tạo ra {count} câu hỏi chất lượng cao tuân thủ định dạng đề thi THPT 2025.
 
 YÊU CẦU:
 - Chủ đề / phạm vi: {topic}
 - Số lượng câu hỏi: {count}
-- Độ khó: {difficulty}
+- Độ khó: {difficulty} (dễ/trung bình/khó)
 - Dạng câu hỏi cần tạo: {question_types}
 
-QUY TẮC:
-1. CHỈ dựa trên nội dung trong TÀI LIỆU TRÍCH XUẤT. KHÔNG tự bịa thông tin ngoài.
-2. Câu hỏi phải phù hợp với format đề thi THPT 2025.
-3. Mỗi câu hỏi phải rõ ràng, không mập mờ.
-4. Đáp án đúng phải chính xác, có thể kiểm chứng từ tài liệu.
+QUY TẮC CỐT LÕI (BẮT BUỘC):
+1. CHỈ dựa trên nội dung trong TÀI LIỆU TRÍCH XUẤT. KHÔNG tự bịa thông tin bên ngoài.
+2. Với dạng "multiple_choice" (Nhiều lựa chọn):
+   - Phần dẫn ngắn gọn, 1 đáp án đúng và 3 đáp án sai đồng nhất về độ dài. Cung cấp Lời giải chi tiết ở trường `explanation`.
+3. Với dạng "true_false" (Đúng/Sai):
+   - BẮT BUỘC PHẢI CÓ Tình huống/Ngữ cảnh (bối cảnh) khoảng 3-10 dòng đặt vào trường `context`. Nếu không có, bạn phải tổng hợp bối cảnh từ tài liệu.
+   - 4 phát biểu a, b, c, d độc lập, thể hiện 3 mức nhận thức: Nhận biết, Thông hiểu, Vận dụng. Học sinh BẮT BUỘC phải đọc `context` mới làm được, không được chung chung.
+   - Cung cấp giải thích chi tiết cho cả 4 ý gộp chung vào trường `explanation` của câu hỏi.
+4. Với dạng "short_answer" (Trả lời ngắn):
+   - Đòi hỏi tính toán hoặc phân tích sâu để ra MỘT CON SỐ CỤ THỂ hoặc một CỤM TỪ cực ngắn cực chuẩn xác.
+   - Bắt buộc điền kết quả vào `correct_answer_text`.
+   - Lời giải được ghi ở `explanation`.
 
 TÀI LIỆU TRÍCH XUẤT:
 {context}
 
-OUTPUT FORMAT BẮT BUỘC (Trả về duy nhất JSON array, không kèm text nào khác):
+OUTPUT FORMAT BẮT BUỘC (Trả về duy nhất JSON array, không text bên ngoài):
 [
   {{
     "question_type": "multiple_choice",
-    "text": "Nội dung câu hỏi?",
     "difficulty": "{difficulty}",
+    "text": "Nội dung phần dẫn câu hỏi trắc nghiệm?",
+    "explanation": "Giải thích chi tiết vì sao đáp án này đúng và các đáp án khác sai...",
     "options": [
       {{"text": "Phương án A", "is_correct": true}},
       {{"text": "Phương án B", "is_correct": false}},
@@ -224,21 +197,23 @@ OUTPUT FORMAT BẮT BUỘC (Trả về duy nhất JSON array, không kèm text n
   }},
   {{
     "question_type": "true_false",
-    "text": "Xét các phát biểu sau:",
-    "context": "Ngữ cảnh...",
     "difficulty": "{difficulty}",
+    "context": "Nội dung bối cảnh/ngữ cảnh thực tế bắt buộc phải có để học sinh tư duy (3-10 dòng).",
+    "text": "Xét các phát biểu sau:",
+    "explanation": "a) Sai vì... b) Đúng vì... c) Đúng vì... d) Sai vì...",
     "options": [
-      {{"text": "Phát biểu a", "is_correct": true}},
-      {{"text": "Phát biểu b", "is_correct": false}},
-      {{"text": "Phát biểu c", "is_correct": true}},
-      {{"text": "Phát biểu d", "is_correct": false}}
+      {{"text": "Phát biểu a (Nhận biết)", "is_correct": true}},
+      {{"text": "Phát biểu b (Thông hiểu)", "is_correct": false}},
+      {{"text": "Phát biểu c (Vận dụng)", "is_correct": true}},
+      {{"text": "Phát biểu d (Vận dụng cao)", "is_correct": false}}
     ]
   }},
   {{
     "question_type": "short_answer",
-    "text": "Tính giá trị...",
     "difficulty": "{difficulty}",
-    "correct_answer_text": "42"
+    "text": "Nội dung câu hỏi yêu cầu tính toán hoặc phân tích:",
+    "correct_answer_text": "42",
+    "explanation": "Giải thích từng bước tính toán để ra kết quả 42..."
   }}
 ]
 """
@@ -482,6 +457,49 @@ class AIGeneratorService:
         return questions
 
     @staticmethod
+    def _compact_text_for_rag(text: str, max_chars: int = RAG_MAX_CHUNK_CHARS) -> str:
+        if not text:
+            return ''
+        compact = re.sub(r'\s+', ' ', str(text)).strip()
+        if len(compact) <= max_chars:
+            return compact
+        return compact[: max_chars - 3].rstrip() + '...'
+
+    @staticmethod
+    def _build_rag_context(chunks: List[Any], max_total_chars: int = RAG_MAX_CONTEXT_CHARS) -> str:
+        contexts = []
+        seen_signatures = set()
+        total_chars = 0
+
+        for chunk in chunks:
+            text = AIGeneratorService._compact_text_for_rag(getattr(chunk, 'content', ''))
+            if not text:
+                continue
+
+            signature = text[:180].lower()
+            if signature in seen_signatures:
+                continue
+            seen_signatures.add(signature)
+
+            doc_title = getattr(getattr(chunk, 'document', None), 'title', 'Tài liệu')
+            line = f"[{doc_title}]: {text}"
+
+            projected = total_chars + len(line)
+            if contexts and projected > max_total_chars:
+                break
+
+            contexts.append(line)
+            total_chars = projected
+
+        return "\n\n---\n\n".join(contexts)
+
+    @staticmethod
+    def _make_rag_cache_key(**kwargs: Any) -> str:
+        payload = json.dumps(kwargs, sort_keys=True, ensure_ascii=False)
+        digest = hashlib.sha256(payload.encode('utf-8')).hexdigest()
+        return f"ai_gen:rag:{digest}"
+
+    @staticmethod
     def _fallback_questions_from_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         text = AIGeneratorService._blocks_to_text(blocks)
         marker_count = AIGeneratorService._count_question_markers(text)
@@ -715,7 +733,7 @@ class AIGeneratorService:
                 response = cls._extract_generic(file_path)
             t_extract = time.perf_counter()
 
-            print(f"Gemini response received (model={model_name}). Parsing...")
+            print(f"Gemini response received (model={FILE_EXTRACTION_MODEL}). Parsing...")
             raw_text = response.text
             questions = cls._parse_gemini_json(raw_text)
             t_parse = time.perf_counter()
@@ -791,7 +809,7 @@ class AIGeneratorService:
                 )
                 return gemini_client.generate_content(
                     content_parts,
-                    model=model_name,
+                    model=FILE_EXTRACTION_MODEL,
                     config=GENERATION_CONFIG_JSON_STRICT,
                 )
             else:
@@ -805,9 +823,11 @@ class AIGeneratorService:
     @classmethod
     def _extract_docx_chunked(cls, compact_blocks: List[Dict[str, Any]]):
         """
-        Gọi Gemini nhiều lần, mỗi lần với CHUNK_BLOCK_SIZE blocks.
+        Gọi Gemini nhiều lần song song (Concurrency), mỗi lần với CHUNK_BLOCK_SIZE blocks.
         Gộp tất cả câu hỏi lại và trả về FakeResponse.
         """
+        import concurrent.futures
+
         total = len(compact_blocks)
         chunks = [
             compact_blocks[i: i + CHUNK_BLOCK_SIZE]
@@ -818,7 +838,7 @@ class AIGeneratorService:
 
         all_questions_raw = []
 
-        for idx, chunk in enumerate(chunks):
+        def process_chunk(idx, chunk):
             chunk_num = idx + 1
             print(f"[chunked] Processing chunk {chunk_num}/{n_chunks} ({len(chunk)} blocks)...")
             t_chunk_start = time.perf_counter()
@@ -826,8 +846,8 @@ class AIGeneratorService:
             blocks_json_str = json.dumps(chunk, ensure_ascii=False)
             prompt_chunk = (
                 f"Đây là PHẦN {chunk_num}/{n_chunks} của tài liệu DOCX.\n"
-                f"YÊU CẦU BẮT BUỘC: Trích xuất TẤT CẢ câu hỏi trong phần này. "
-                f"Nếu phần này không chứa câu hỏi hoàn chỉnh, trả về mảng rỗng [].\n\n"
+                f"YÊU CẦU BẮT BUỘC: Trích xuất TẤT CẢ câu hỏi trong phần này.\n"
+                f"Nếu phần này không chứa câu hỏi hoàn chỉnh, chỉ chứa đáp án thì cố gắng gom vào câu hỏi trước đó hoặc trả về mảng rỗng [].\n\n"
                 f"MÃ NGUỒN CONTENT BLOCKS (PHẦN {chunk_num}/{n_chunks}):\n{blocks_json_str}"
             )
             content_parts = [EXTRACTION_PROMPT, prompt_chunk]
@@ -835,23 +855,35 @@ class AIGeneratorService:
             try:
                 response = gemini_client.generate_content(
                     content_parts,
-                    model=model_name,
+                    model=FILE_EXTRACTION_MODEL,
                     config=GENERATION_CONFIG_JSON_STRICT,
                 )
                 chunk_questions = cls._parse_gemini_json(response.text)
                 t_chunk_end = time.perf_counter()
                 print(
                     f"[chunked] Chunk {chunk_num}/{n_chunks}: "
-                    f"{len(chunk_questions)} questions in {t_chunk_end - t_chunk_start:.1f}s"
+                    f"Found {len(chunk_questions)} questions in {t_chunk_end - t_chunk_start:.1f}s"
                 )
-                all_questions_raw.extend(chunk_questions)
+                return chunk_questions
             except Exception as e:
                 print(f"[chunked] Chunk {chunk_num}/{n_chunks} FAILED: {e}. Skipping.")
-                continue
+                return []
 
-        print(f"[chunked] Total raw questions collected: {len(all_questions_raw)}")
+        # Chạy song song tối đa 5 threads để tránh Rate Limit (HTTP 429) của Gemini Free/Flash
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_chunk = {executor.submit(process_chunk, i, chunk): i for i, chunk in enumerate(chunks)}
+            # Thu thập kết quả theo thứ tự (giữ nguyên thứ tự câu hỏi trong đề)
+            results = [None] * n_chunks
+            for future in concurrent.futures.as_completed(future_to_chunk):
+                i = future_to_chunk[future]
+                results[i] = future.result()
 
-        # Trả về object giả có .text chứa JSON gộp để compatible với caller
+        for res in results:
+            if res:
+                all_questions_raw.extend(res)
+
+        print(f"[chunked] Total raw questions collected from all threads: {len(all_questions_raw)}")
+
         class _FakeResponse:
             def __init__(self, questions):
                 self.text = json.dumps(questions, ensure_ascii=False)
@@ -902,7 +934,7 @@ class AIGeneratorService:
                 
                 return gemini_client.generate_content(
                     content_parts,
-                    model=model_name,
+                    model=FILE_EXTRACTION_MODEL,
                     config=GENERATION_CONFIG_JSON_STRICT,
                 )
 
@@ -913,7 +945,7 @@ class AIGeneratorService:
                 uploaded_images.append(uploaded_file)
                 return gemini_client.generate_content(
                     [uploaded_file, EXTRACTION_PROMPT_GENERIC],
-                    model=model_name,
+                    model=FILE_EXTRACTION_MODEL,
                     config=GENERATION_CONFIG_JSON_STRICT,
                 )
                 
@@ -935,14 +967,31 @@ class AIGeneratorService:
         difficulty: str,
         class_id: str,
         question_types: str = 'multiple_choice',
+        document_id: int = None,
     ) -> List[Dict[str, Any]]:
         """
         Sinh câu hỏi dựa trên tri thức nội bộ (DocumentChunk embeddings).
         1. Tìm top-K chunks liên quan tới topic bằng vector similarity.
         2. Ghép context vào prompt, yêu cầu Gemini tạo câu hỏi.
+        Nếu có document_id sẽ chỉ lấy chunks trong tài liệu đó.
         """
         if not api_key:
             raise ValueError("GEMINI_API_KEY is not configured.")
+
+        count = max(1, min(int(count or 1), 30))
+
+        cache_key = cls._make_rag_cache_key(
+            topic=(topic or '').strip().lower(),
+            count=count,
+            difficulty=(difficulty or 'medium').strip().lower(),
+            class_id=str(class_id),
+            question_types=str(question_types or 'multiple_choice'),
+            document_id=str(document_id or ''),
+            model=RAG_GENERATION_MODEL,
+        )
+        cached_questions = cache.get(cache_key)
+        if isinstance(cached_questions, list) and cached_questions:
+            return cached_questions
 
         from ai_core.models import DocumentChunk
         from pgvector.django import L2Distance
@@ -952,21 +1001,22 @@ class AIGeneratorService:
             content=topic,
             task_type="RETRIEVAL_QUERY",
             output_dimensionality=768,
+            use_cache=True,
         )
 
-        # Bước 2: Tìm 10 chunks gần nhất thuộc lớp này
+        # Bước 2: Lọc chunks theo lớp và (tuỳ chọn) theo tài liệu
+        chunk_qs = DocumentChunk.objects.filter(document__classroom_id=class_id)
+        if document_id:
+            chunk_qs = chunk_qs.filter(document_id=document_id)
+
+        top_k = min(12, max(6, count * 2))
         closest_chunks = (
-            DocumentChunk.objects
-            .filter(document__classroom_id=class_id)
+            chunk_qs
             .annotate(distance=L2Distance('embedding', query_embedding))
-            .order_by('distance')[:10]
+            .order_by('distance')[:top_k]
         )
 
-        contexts = []
-        for chunk in closest_chunks:
-            contexts.append(f"[{chunk.document.title}]: {chunk.content}")
-
-        context_text = "\n\n---\n\n".join(contexts)
+        context_text = cls._build_rag_context(list(closest_chunks))
 
         if not context_text.strip():
             raise ValueError(
@@ -983,7 +1033,10 @@ class AIGeneratorService:
             context=context_text,
         )
 
-        response = gemini_client.generate_content(prompt, model=model_name, config=GENERATION_CONFIG_RAG)
+        response = gemini_client.generate_content(prompt, model=RAG_GENERATION_MODEL, config=GENERATION_CONFIG_RAG)
 
         questions = cls._parse_gemini_json(response.text)
-        return cls._normalize_questions(questions)
+        normalized = cls._normalize_questions(questions)
+        if normalized:
+            cache.set(cache_key, normalized, timeout=RAG_CACHE_TTL_SECONDS)
+        return normalized

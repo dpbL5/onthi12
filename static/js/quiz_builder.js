@@ -89,6 +89,33 @@ function extractTextFromBlocks(blocks) {
         .trim();
 }
 
+// ─── RAG: Tải danh sách Tài liệu khi chọn Lớp học ───
+async function loadRagDocuments(classId) {
+    const wrap = document.getElementById('ragDocumentWrap');
+    const sel = document.getElementById('ragDocument');
+    const status = document.getElementById('ragDocumentStatus');
+    if (!wrap || !sel || !classId) return;
+
+    // Reset
+    sel.innerHTML = '<option value="">Toàn bộ tài liệu trong lớp</option>';
+    status.textContent = 'Đang tải danh sách tài liệu...';
+    wrap.style.display = 'block';
+
+    try {
+        const res = await fetch(`/api/ai/classes/${classId}/documents/`, { headers: authHeaders() });
+        if (!res.ok) { status.textContent = 'Không thể tải tài liệu.'; return; }
+        const docs = await res.json();
+        if (Array.isArray(docs) && docs.length > 0) {
+            docs.forEach(d => sel.add(new Option(d.title || d.file_path, d.id)));
+            status.textContent = `Đã tải ${docs.length} tài liệu.`;
+        } else {
+            status.textContent = 'Lớp học này chưa có tài liệu nào.';
+        }
+    } catch (e) {
+        status.textContent = 'Lỗi kết nối.';
+    }
+}
+
 function buildQuestionImageMap(questionImages) {
     const map = {};
     if (!Array.isArray(questionImages)) return map;
@@ -213,6 +240,17 @@ async function init() {
         await loadQuizData();
         await loadSelectedQuestions();
         await loadQuestionBank();
+
+        // RAG: Tải danh mục tài liệu của lớp học này
+        if (quizData && quizData.classroom) {
+            const ragClassSelect = document.getElementById('ragClass');
+            if (ragClassSelect) {
+                // Trong Quiz Builder, mặc định chọn sẵn lớp của Quiz và ẩn selector lớp (hoặc disabled)
+                ragClassSelect.innerHTML = `<option value="${quizData.classroom}" selected>${quizData.classroom_name}</option>`;
+                ragClassSelect.disabled = true;
+                await loadRagDocuments(quizData.classroom);
+            }
+        }
         
         document.getElementById('loadingQuiz').style.display = 'none';
         document.getElementById('quizContent').style.display = 'block';
@@ -272,7 +310,33 @@ async function loadSelectedQuestions() {
     }
     const data = await res.json();
     selectedQuestions = normalizeListResponse(data);
+    await syncQuizPointsToTenScale();
     renderSelectedQuestions();
+}
+
+async function syncQuizPointsToTenScale() {
+    if (!Array.isArray(selectedQuestions) || selectedQuestions.length === 0) return;
+
+    const pointsPerQuestion = parseFloat((10 / selectedQuestions.length).toFixed(2));
+    const updates = [];
+
+    selectedQuestions.forEach((qq) => {
+        const currentPoints = parseFloat(qq.points || 0);
+        if (Number.isNaN(currentPoints) || Math.abs(currentPoints - pointsPerQuestion) > 0.001) {
+            updates.push(
+                fetch(`/api/exams/${quizId}/questions/${qq.id}/`, {
+                    method: 'PATCH',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ points: pointsPerQuestion })
+                })
+            );
+            qq.points = pointsPerQuestion.toFixed(2);
+        }
+    });
+
+    if (updates.length > 0) {
+        await Promise.allSettled(updates);
+    }
 }
 
 function renderSelectedQuestions() {
@@ -290,13 +354,13 @@ function renderSelectedQuestions() {
     msg.style.display = 'none';
     document.getElementById('quizQuestionCount').textContent = selectedQuestions.length;
     
-    let tPoints = 0;
+    // New logic: Each question = 10 / số câu
+    const perQuestionPoint = selectedQuestions.length > 0 ? (10 / selectedQuestions.length) : 0;
     selectedQuestions.sort((a,b) => a.order - b.order).forEach((qq, idx) => {
-        tPoints += parseFloat(qq.points);
+        qq.points = perQuestionPoint.toFixed(2); // update points for display
         const q = qq.question;
         const item = document.createElement('li');
         item.className = 'list-group-item p-3 border-0 border-bottom';
-        
         item.innerHTML = `
             <div class="d-flex justify-content-between align-items-start mb-2">
                 <div class="d-flex align-items-center gap-1 flex-wrap">
@@ -315,7 +379,7 @@ function renderSelectedQuestions() {
         `;
         list.appendChild(item);
     });
-    document.getElementById('totalPoints').textContent = tPoints;
+    document.getElementById('totalPoints').textContent = selectedQuestions.length > 0 ? 10 : 0;
 }
 
 async function loadQuestionBank() {
@@ -380,11 +444,13 @@ async function addQuestionToQuiz(qId) {
     if (selectedQuestions.length > 0) {
         maxOrder = Math.max(...selectedQuestions.map(qq => qq.order));
     }
+    const nextQuestionCount = selectedQuestions.length + 1;
+    const nextPointValue = parseFloat((10 / nextQuestionCount).toFixed(2));
     
     const res = await fetch(`/api/exams/${quizId}/questions/`, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ question_id: qId, order: maxOrder + 1, points: 5.0 })
+        body: JSON.stringify({ question_id: qId, order: maxOrder + 1, points: nextPointValue })
     });
     
     if (res.status === 401) { window.location.href = '/login/'; return; }
@@ -463,44 +529,13 @@ async function submitEditQuiz() {
     }
 }
 
-function previewQuiz() {
-    const body = document.getElementById('previewQuizBody');
-    if (!body) return;
 
-    if (!Array.isArray(selectedQuestions) || selectedQuestions.length === 0) {
-        body.innerHTML = '<div class="alert alert-info mb-0">Đề thi chưa có câu hỏi để xem trước.</div>';
-        new bootstrap.Modal(document.getElementById('previewQuizModal')).show();
-        return;
-    }
-
-    const rows = [...selectedQuestions]
-        .sort((a, b) => a.order - b.order)
-        .map((qq, idx) => {
-            const q = qq.question || {};
-            return `
-                <div class="card mb-3 border-0 shadow-sm">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="badge bg-primary">Câu ${idx + 1}</span>
-                            <span class="small text-muted">${qq.points || 0} điểm</span>
-                        </div>
-                        <div class="mb-2">${renderQuestionStem(q)}</div>
-                        <div class="small text-muted">${renderQuestionContent(q)}</div>
-                    </div>
-                </div>
-            `;
-        })
-        .join('');
-
-    body.innerHTML = rows;
-    new bootstrap.Modal(document.getElementById('previewQuizModal')).show();
-}
 
 // ─── Create Question Form Toggle ────────────────────────────────────────────
 
 function toggleQbOptions() {
     const type = document.getElementById('qbType').value;
-    const container = document.getElementById('optionsSection');
+    const container = document.getElementById('qbOptionsContainer');
     const ctxWrap = document.getElementById('qbContextWrapper');
 
     if (ctxWrap) ctxWrap.style.display = (type === 'true_false') ? 'block' : 'none';
@@ -558,10 +593,8 @@ async function submitCreateQuestion() {
     const isEditMode = (typeof editingQuestionId !== 'undefined' && editingQuestionId !== null);
     const addToQuizNow = !!document.getElementById('addManualToQuiz')?.checked;
     
-    // Get class/subject info
-    const classRes = await fetch(`/api/classes/${quizData.classroom}/`, { headers: authHeaders() });
-    const classData = await classRes.json();
-    const subjectId = classData.subject;
+    // Get subject_id from quizData directly (optimized)
+    const subjectId = quizData.subject_id;
 
     let payload = {
         question_type: qType,
@@ -617,6 +650,9 @@ async function submitCreateQuestion() {
                 questions: [payload],
                 quiz_id: addToQuizNow ? quizId : null,
                 subject_id: subjectId,
+                points: addToQuizNow
+                    ? parseFloat((10 / (selectedQuestions.length + 1)).toFixed(2))
+                    : 0.0
             })
         });
     }
@@ -626,7 +662,7 @@ async function submitCreateQuestion() {
         const modal = bootstrap.Modal.getInstance(modalEl);
         if (modal) modal.hide();
         
-        showGlobalAlert(isEditMode ? 'Cập nhật câu hỏi thành công!' : 'Thêm câu hỏi mới thành công!', 'success');
+        showGlobalAlert(isEditMode ? 'Cập nhật câu hỏi thành công!' : 'Tạo mới thành công!', 'success');
         if (isEditMode) editingQuestionId = null;
         
         await loadQuizData();
@@ -634,7 +670,7 @@ async function submitCreateQuestion() {
         await loadQuestionBank();
     } else {
         const data = await res.json();
-        errEl.textContent = data.error || "Lỗi lưu câu hỏi.";
+        errEl.textContent = (data.error || data.detail || "Lỗi lưu câu hỏi.");
     }
 }
 
@@ -644,18 +680,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalEl = document.getElementById('createQuestionModal');
     if (modalEl) {
         modalEl.addEventListener('show.bs.modal', () => {
-            // Reset form if not in edit mode (will be handled by editQuestion if it is)
+            // Reset form if not in edit mode
             if (!editingQuestionId) {
+                document.getElementById('qbModalTitle').innerText = 'Tạo câu hỏi thủ công';
                 document.getElementById('createQuestionForm').reset();
                 document.getElementById('qbType').value = 'multiple_choice';
                 document.getElementById('qbContext').value = '';
+                
+                // Populate subject name
+                const subSel = document.getElementById('qbSubject');
+                if (subSel) {
+                    subSel.innerHTML = `<option value="${quizData.subject_id}" selected>${quizData.subject_name}</option>`;
+                }
+
                 toggleQbOptions();
             }
             
             // Initialize EasyMDE if not exists
             if (!qbEasyMDE) {
                 qbEasyMDE = new EasyMDE({
-                    element: document.getElementById('newQuestionText'),
+                    element: document.getElementById('qbText'),
                     spellChecker: false,
                     autosave: { enabled: false },
                     status: false,
@@ -688,10 +732,17 @@ async function editQuestion(qId) {
         const modal = new bootstrap.Modal(modalEl);
         modal.show();
 
+        document.getElementById('qbModalTitle').innerText = 'Chỉnh sửa câu hỏi';
+        
         // Populate fields
         document.getElementById('qbType').value = q.question_type;
-        document.getElementById('newQuestionDiff').value = q.difficulty;
+        document.getElementById('qbDiff').value = q.difficulty;
         document.getElementById('qbContext').value = q.context || '';
+
+        const subSel = document.getElementById('qbSubject');
+        if (subSel) {
+            subSel.innerHTML = `<option value="${q.subject}" selected>${q.subject_name}</option>`;
+        }
         
         if (qbEasyMDE) qbEasyMDE.value(q.text || '');
         
@@ -852,13 +903,27 @@ function renderDraftBoard(source) {
     board.innerHTML = drafts.map((q, index) => {
         const qType = q.question_type || 'multiple_choice';
         const unresolved = !hasConfiguredAnswer(q);
+        
+        let explanationHtml = '';
+        if (q.explanation && q.explanation.trim()) {
+            explanationHtml = `<div class="mt-2 p-2 bg-success text-white bg-opacity-10 border border-success rounded small"><strong class="text-success"><i class="bi bi-lightbulb"></i> Lời giải / Trích xuất:</strong> <span class="text-dark">${escapeHtml(q.explanation)}</span></div>`;
+        }
+        
+        let contextHtml = '';
+        if (q.context && q.context.trim()) {
+            contextHtml = `<div class="bg-light p-2 mb-2 rounded small fst-italic border-start border-3 border-secondary text-muted"><strong>Ngữ cảnh:</strong> ${escapeHtml(q.context)}</div>`;
+        }
+
         return `
             <div class="card mb-3 border-primary shadow-sm">
                 <div class="card-header bg-white d-flex justify-content-between align-items-start p-3">
-                    <div class="form-check">
+                    <div class="form-check w-100 pe-3">
                         <input class="form-check-input ai-draft-cb-${source} mt-2" type="checkbox" value="${index}" checked id="draft_${source}_${index}">
                         <label class="form-check-label fw-bold d-block mb-1" for="draft_${source}_${index}">Câu ${index + 1}:</label>
-                        <div class="ps-4">${renderQuestionStem(q)}</div>
+                        <div class="ps-4">
+                            ${contextHtml}
+                            ${renderQuestionStem(q)}
+                        </div>
                         ${unresolved ? '<div class="ps-4 mt-1"><span class="badge bg-danger">Chưa cài đặt đáp án đúng</span></div>' : ''}
                     </div>
                     <div class="d-flex gap-1 align-items-center">
@@ -868,6 +933,7 @@ function renderDraftBoard(source) {
                 </div>
                 <div class="card-body p-3">
                     ${renderQuestionContent(q)}
+                    ${explanationHtml}
                 </div>
             </div>
         `;
@@ -1045,6 +1111,7 @@ function bindAiGeneratorEvents() {
                         count: parseInt(count, 10),
                         difficulty,
                         question_types: questionTypes,
+                        document_id: document.getElementById('ragDocument')?.value || null,
                     }),
                 });
 

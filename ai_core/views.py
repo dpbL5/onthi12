@@ -3,6 +3,8 @@ import json
 import zipfile
 import tempfile
 import docx
+import hashlib
+import re
 
 from django.core.cache import cache
 import time
@@ -25,11 +27,66 @@ from .services import gemini_client
 from django.utils import timezone
 from datetime import timedelta
 
+AI_TUTOR_MODEL = os.environ.get('AI_TUTOR_MODEL_NAME', 'gemma-3-4b-it')
+AI_EXTRACTION_MODEL = os.environ.get('AI_EXTRACTION_MODEL_NAME', 'gemini-flash-latest')
+
 class RAGChatbotView(APIView):
     """
     API Chatbot sử dụng kiến trúc RAG tích hợp file docx giảng dạy của nhà trường.
     """
     permission_classes = [IsAuthenticated]
+
+    CHAT_CONTEXT_MAX_CHARS = 3200
+    CHAT_CHUNK_MAX_CHARS = 600
+    CHAT_RESPONSE_CACHE_TTL = 180
+
+    @staticmethod
+    def _compact_text(text, max_chars=600):
+        if not text:
+            return ''
+        compact = re.sub(r'\s+', ' ', str(text)).strip()
+        if len(compact) <= max_chars:
+            return compact
+        return compact[: max_chars - 3].rstrip() + '...'
+
+    @classmethod
+    def _build_context_and_sources(cls, chunks):
+        contexts = []
+        sources = []
+        seen_doc_titles = set()
+        seen_snippets = set()
+        total_chars = 0
+
+        for chunk in chunks:
+            snippet = cls._compact_text(chunk.content, max_chars=cls.CHAT_CHUNK_MAX_CHARS)
+            if not snippet:
+                continue
+
+            dedupe_key = snippet[:180].lower()
+            if dedupe_key in seen_snippets:
+                continue
+            seen_snippets.add(dedupe_key)
+
+            doc_title = chunk.document.title
+            line = f"Tài liệu [{doc_title}]: {snippet}"
+            projected = total_chars + len(line)
+            if contexts and projected > cls.CHAT_CONTEXT_MAX_CHARS:
+                break
+
+            contexts.append(line)
+            total_chars = projected
+
+            if doc_title not in seen_doc_titles:
+                seen_doc_titles.add(doc_title)
+                sources.append({"doc": doc_title})
+
+        return "\n\n---\n\n".join(contexts), sources
+
+    @staticmethod
+    def _make_chat_cache_key(class_id, question):
+        normalized_question = re.sub(r'\s+', ' ', str(question or '')).strip().lower()
+        digest = hashlib.sha256(f"{class_id}|{normalized_question}".encode('utf-8')).hexdigest()
+        return f"ai_tutor:chat:{digest}"
 
     def post(self, request):
         if not gemini_client.is_configured():
@@ -73,7 +130,13 @@ class RAGChatbotView(APIView):
                 content=question,
                 task_type="RETRIEVAL_QUERY",
                 output_dimensionality=768,
+                use_cache=True,
             )
+
+            response_cache_key = self._make_chat_cache_key(class_id=class_id, question=question)
+            cached_answer = cache.get(response_cache_key)
+            if isinstance(cached_answer, dict):
+                return Response(cached_answer)
 
             # Bước 2: Tìm kiếm gần tương đồng trên PostgreSQL Vector (pgvector)
             # Lấy 5 khối kiến thức có khoảng cách nhỏ nhất (nghĩa là sát nhất với câu hỏi)
@@ -84,14 +147,7 @@ class RAGChatbotView(APIView):
             ).order_by('distance')[:5]
 
             # Rút trích văn bản làm ngữ cảnh
-            contexts = []
-            sources = []
-            for chunk in closest_chunks:
-                contexts.append(f"Tài liệu [{chunk.document.title}]: {chunk.content}")
-                if chunk.document.title not in [s['doc'] for s in sources]:
-                    sources.append({"doc": chunk.document.title})
-
-            context_text = "\n\n---\n\n".join(contexts)
+            context_text, sources = self._build_context_and_sources(closest_chunks)
 
             if not context_text:
                 context_text = "Không có tài liệu nào trong lớp học này."
@@ -113,12 +169,22 @@ TÀI LIỆU TRÍCH XUẤT:
 CÂU HỎI TỪ HỌC SINH: {question}
 """
             # Gọi LLM (Gemini Flash)
-            response = gemini_client.generate_content(system_prompt)
+            response = gemini_client.generate_content(
+                system_prompt,
+                model=AI_TUTOR_MODEL,
+                config={
+                    'temperature': 0.2,
+                    'max_output_tokens': 768,
+                },
+            )
 
-            return Response({
+            payload = {
                 "answer": response.text,
                 "sources": sources
-            })
+            }
+            cache.set(response_cache_key, payload, timeout=self.CHAT_RESPONSE_CACHE_TTL)
+
+            return Response(payload)
 
         except Exception as e:
             return Response({"error": f"Lỗi AI Core: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -291,21 +357,31 @@ class UploadClassDocumentView(APIView):
                                         img_tmp_paths.append(tmp_img.name)
 
                         if img_tmp_paths:
-                            print(f"  Found {len(img_tmp_paths)} embedded images. Describing with Gemini...")
-                            for idx, img_path in enumerate(img_tmp_paths):
+                            print(f"  Found {len(img_tmp_paths)} embedded images. Describing with Gemini concurrently...")
+                            import concurrent.futures
+
+                            def describe_image(idx_path):
+                                i, p = idx_path
                                 try:
-                                    uploaded_img = gemini_client.upload_file(path=img_path)
+                                    uploaded_img = gemini_client.upload_file(path=p)
                                     desc_response = gemini_client.generate_content([
                                         uploaded_img,
                                         "Mô tả chi tiết nội dung của hình ảnh này (có thể là đồ thị, công thức, biểu đồ, mính họa...) theo ngôn ngữ Việt Nam, súc tích, chính xác."
-                                    ])
-                                    image_descriptions.append(f"[Hình ảnh {idx+1}]: {desc_response.text}")
+                                    ], model=AI_EXTRACTION_MODEL)
                                     try:
                                         gemini_client.delete_file(uploaded_img.name)
-                                    except Exception:
+                                    except:
                                         pass
-                                except Exception as img_err:
-                                    print(f"  Could not describe image {idx+1}: {img_err}")
+                                    return f"[Hình ảnh {i+1}]: {desc_response.text}"
+                                except Exception as e:
+                                    print(f"  Could not describe image {i+1}: {e}")
+                                    return None
+
+                            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                                results = executor.map(describe_image, enumerate(img_tmp_paths))
+                                for res in results:
+                                    if res:
+                                        image_descriptions.append(res)
                     finally:
                         for p in img_tmp_paths:
                             try:
@@ -327,7 +403,7 @@ class UploadClassDocumentView(APIView):
                     uploaded_file = gemini_client.upload_file(path=tmp_file_path)
 
                     prompt = "Hãy trích xuất lại toàn bộ văn bản và bảng biểu có trong tài liệu này một cách chính xác nhất. Đừng thêm bớt nội dung bình luận nào cả. Chỉ nguyên văn bản trong tài liệu."
-                    response = gemini_client.generate_content([uploaded_file, prompt])
+                    response = gemini_client.generate_content([uploaded_file, prompt], model=AI_EXTRACTION_MODEL)
                     extracted_text = response.text
 
                     try:
@@ -357,18 +433,32 @@ class UploadClassDocumentView(APIView):
                 if len(chunk.strip()) > 0:
                     chunks.append(chunk)
 
-            for idx, chunk_text in enumerate(chunks):
-                embedding = gemini_client.embed_content(
-                    content=chunk_text,
-                    task_type="RETRIEVAL_DOCUMENT",
-                    output_dimensionality=768,
-                )
-                DocumentChunk.objects.create(
-                    document=doc_obj,
-                    chunk_index=idx,
-                    content=chunk_text,
-                    embedding=embedding
-                )
+            import concurrent.futures
+            
+            def create_embedded_chunk(args):
+                idx, chunk_text = args
+                try:
+                    embedding = gemini_client.embed_content(
+                        content=chunk_text,
+                        task_type="RETRIEVAL_DOCUMENT",
+                        output_dimensionality=768,
+                    )
+                    return {"idx": idx, "text": chunk_text, "emb": embedding}
+                except Exception as e:
+                    print(f"Embed chunk {idx} failed: {e}")
+                    return None
+
+            print(f"Embedding {len(chunks)} chunks concurrently...")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                results = executor.map(create_embedded_chunk, enumerate(chunks))
+                for res in results:
+                    if res:
+                        DocumentChunk.objects.create(
+                            document=doc_obj,
+                            chunk_index=res["idx"],
+                            content=res["text"],
+                            embedding=res["emb"]
+                        )
 
             os.remove(tmp_file_path)
             
@@ -453,6 +543,7 @@ class AIGenerateFromRAGView(APIView):
         count = int(request.data.get('count', 5))
         difficulty = request.data.get('difficulty', 'medium')
         question_types = request.data.get('question_types', 'multiple_choice')
+        document_id = request.data.get('document_id')  # Tuỳ chọn: Lọc theo 1 tài liệu cụ thể
 
         if not class_id:
             return Response({"error": "Thiếu class_id."}, status=status.HTTP_400_BAD_REQUEST)
@@ -466,6 +557,7 @@ class AIGenerateFromRAGView(APIView):
                 difficulty=difficulty,
                 class_id=class_id,
                 question_types=question_types,
+                document_id=document_id,
             )
             return Response({"questions": questions_data})
 
@@ -529,6 +621,7 @@ class AIBulkSaveQuestionsView(APIView):
                     image=q_data.get('image', ''),
                     context=q_data.get('context', '') or '',
                     correct_answer_text=q_data.get('correct_answer_text', '') or '',
+                    explanation=q_data.get('explanation', '') or '',
                     subject=subject,
                     difficulty=q_data.get('difficulty', 'medium'),
                     created_by=request.user,
@@ -563,8 +656,18 @@ class AIBulkSaveQuestionsView(APIView):
                         quiz=quiz,
                         question=question,
                         order=max_order + 1,
-                        points=1.0,
+                        points=0.0,
                     )
+
+                    quiz_questions = list(
+                        QuizQuestion.objects.filter(quiz=quiz).order_by('order')
+                    )
+                    total_questions = len(quiz_questions)
+                    if total_questions > 0:
+                        points_per_question = round(10.0 / total_questions, 2)
+                        for qq in quiz_questions:
+                            qq.points = points_per_question
+                        QuizQuestion.objects.bulk_update(quiz_questions, ['points'])
 
                 saved_questions.append(question.id)
 
