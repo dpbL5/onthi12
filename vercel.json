@@ -2,11 +2,11 @@
   "version": 2,
   "builds": [
     {
-      "src": "static/(.*)",
+      "src": "static/**/*",
       "use": "@vercel/static"
     },
     {
-      "src": "media/(.*)",
+      "src": "media/**/*",
       "use": "@vercel/static"
     },
     {
