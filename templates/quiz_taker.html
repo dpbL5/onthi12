@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block title %}Làm bài – Nguyễn Văn Huyên Learning{% endblock %}
 {% block content %}
 <div style="min-height:100vh;background:var(--color-bg);">
@@ -130,7 +131,7 @@
 <script>
 const quizId = "{{ quiz_id }}";
 </script>
-<script src="/static/js/quiz_taker.js"></script>
+<script src="{% static 'js/quiz_taker.js' %}"></script>
 
 <style>
 .tf-btn { cursor: pointer; transition: var(--transition); }

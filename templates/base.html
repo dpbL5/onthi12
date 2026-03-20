@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
+    {% load static %}
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Nguyễn Văn Huyên Learning{% endblock %}</title>
@@ -15,7 +16,7 @@
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
     <!-- Main CSS -->
-    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="{% static 'css/main.css' %}">
     <!-- MathJax for LaTeX formula rendering -->
     <script>
         window.MathJax = {
@@ -38,7 +39,7 @@
     <div class="container-fluid d-flex align-items-center gap-3">
         <!-- Brand -->
         <a class="navbar-brand" href="/">
-            <img src="/static/images/logo.png" alt="Logo" style="height: 32px; margin-right: 10px; border-radius: 6px;">
+            <img src="{% static 'images/logo.png' %}" alt="Logo" style="height: 32px; margin-right: 10px; border-radius: 6px;">
             <span>Nguyễn Văn Huyên Learning</span>
         </a>
 
@@ -63,7 +64,7 @@
 <!-- ── Scripts ──────────────────────────────────────────── -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script src="/static/js/base.js"></script>
+<script src="{% static 'js/base.js' %}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

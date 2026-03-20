@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block title %}Đăng ký – Nguyễn Văn Huyên Learning{% endblock %}
 {% block content %}
 <div class="auth-wrapper">
@@ -6,7 +7,7 @@
     <div class="auth-panel-left d-none d-lg-flex">
         <div class="position-relative z-1 text-center text-white">
             <div style="width:288px;height:288px;background:rgba(255,255,255,0.15);border-radius:20px;display:flex;align-items:center;justify-content:center;margin:0 auto 1.5rem;overflow:hidden;padding:32px;">
-                <img src="/static/images/logo.png" alt="Logo" style="max-width:100%; max-height:100%; object-fit:contain;">
+                <img src="{% static 'images/logo.png' %}" alt="Logo" style="max-width:100%; max-height:100%; object-fit:contain;">
             </div>
             <h2 style="font-size:1.8rem;font-weight:800;letter-spacing:-0.03em;margin-bottom:0.75rem;">Tham gia ngay!</h2>
             <p style="opacity:0.8;max-width:270px;line-height:1.7;font-size:0.9rem;">Đăng ký tài khoản để bắt đầu học tập và giảng dạy thông minh cùng Nguyễn Văn Huyên Learning.</p>
@@ -33,7 +34,7 @@
     <div class="auth-panel-right" style="overflow-y:auto;">
         <div class="auth-form-box">
             <div class="d-lg-none text-center mb-4">
-                <img src="/static/images/logo.png" alt="Logo" style="height: 192px; border-radius: 12px;">
+                <img src="{% static 'images/logo.png' %}" alt="Logo" style="height: 192px; border-radius: 12px;">
             </div>
             <h1 class="auth-title">Tạo tài khoản mới</h1>
             <p class="auth-subtitle">Miễn phí và chỉ mất vài giây. Bắt đầu hành trình học tập!</p>
@@ -103,5 +104,5 @@
     </div>
 </div>
 
-<script src="/static/js/auth.js"></script>
+<script src="{% static 'js/auth.js' %}"></script>
 {% endblock %}
