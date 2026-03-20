@@ -2,12 +2,28 @@
   "version": 2,
   "builds": [
     {
+      "src": "static/(.*)",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "media/(.*)",
+      "use": "@vercel/static"
+    },
+    {
       "src": "nvh_learning/wsgi.py",
       "use": "@vercel/python",
       "config": { "maxLambdaSize": "15mb", "runtime": "python3.12" }
     }
   ],
   "routes": [
+    {
+      "src": "/static/(.*)",
+      "dest": "/static/$1"
+    },
+    {
+      "src": "/media/(.*)",
+      "dest": "/media/$1"
+    },
     {
       "src": "/(.*)",
       "dest": "nvh_learning/wsgi.py"
