@@ -1,14 +1,6 @@
 from rest_framework import serializers
 from .models import Question, Option, Quiz, QuizQuestion, QuizAttempt, StudentAnswer, ImageBank, QuestionImage
-from classes.models import Subject, Class, Topic
-from accounts.serializers import UserSerializer
-
-class TopicSerializer(serializers.ModelSerializer):
-    subject_name = serializers.CharField(source='subject.name', read_only=True)
-
-    class Meta:
-        model = Topic
-        fields = ['id', 'name', 'subject', 'subject_name', 'description']
+from classes.models import Subject, Class
 
 
 class OptionSerializer(serializers.ModelSerializer):
@@ -53,7 +45,6 @@ class QuestionSerializer(serializers.ModelSerializer):
     options = OptionSerializer(many=True, read_only=True)
     question_images = QuestionImageSerializer(many=True, read_only=True)
     subject_name = serializers.CharField(source='subject.name', read_only=True)
-    topic_name = serializers.CharField(source='topic.name', read_only=True)
     question_type_display = serializers.CharField(
         source='get_question_type_display', read_only=True
     )
@@ -62,7 +53,7 @@ class QuestionSerializer(serializers.ModelSerializer):
         model = Question
         fields = [
             'id', 'question_type', 'question_type_display',
-            'subject', 'subject_name', 'topic', 'topic_name', 'difficulty',
+            'subject', 'subject_name', 'difficulty',
             'text', 'content_json', 'context', 'image', 'correct_answer_text',
             'created_at', 'options', 'question_images',
         ]

@@ -3,7 +3,6 @@ import json
 import zipfile
 import tempfile
 import docx
-import google.generativeai as genai
 
 from django.core.cache import cache
 import time
@@ -22,13 +21,9 @@ from rest_framework import permissions
 from exams.models import Question, Option, Quiz, QuizQuestion
 from exams.views import IsTeacherOrAdmin
 from .services.ai_generator import AIGeneratorService
+from .services import gemini_client
 from django.utils import timezone
 from datetime import timedelta
-
-# Ensure API key is configured if available
-api_key = os.environ.get('GEMINI_API_KEY')
-if api_key:
-    genai.configure(api_key=api_key)
 
 class RAGChatbotView(APIView):
     """
@@ -37,7 +32,7 @@ class RAGChatbotView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        if not api_key:
+        if not gemini_client.is_configured():
             return Response({"error": "Chưa cấu hình GEMINI_API_KEY trên server."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         class_id = request.data.get('class_id')
@@ -74,13 +69,11 @@ class RAGChatbotView(APIView):
 
         try:
             # Bước 1: Chuyển đổi câu hỏi thành Vector Embeddings
-            embed_result = genai.embed_content(
-                model="models/gemini-embedding-001",
+            query_embedding = gemini_client.embed_content(
                 content=question,
-                task_type="retrieval_query",
-                output_dimensionality=768
+                task_type="RETRIEVAL_QUERY",
+                output_dimensionality=768,
             )
-            query_embedding = embed_result['embedding']
 
             # Bước 2: Tìm kiếm gần tương đồng trên PostgreSQL Vector (pgvector)
             # Lấy 5 khối kiến thức có khoảng cách nhỏ nhất (nghĩa là sát nhất với câu hỏi)
@@ -120,8 +113,7 @@ TÀI LIỆU TRÍCH XUẤT:
 CÂU HỎI TỪ HỌC SINH: {question}
 """
             # Gọi LLM (Gemini Flash)
-            model = genai.GenerativeModel('gemini-flash-latest')
-            response = model.generate_content(system_prompt)
+            response = gemini_client.generate_content(system_prompt)
 
             return Response({
                 "answer": response.text,
@@ -211,8 +203,7 @@ YÊU CẦU BÁO CÁO:
 
 BÁO CÁO:
 """
-            model = genai.GenerativeModel('gemini-flash-latest')
-            response = model.generate_content(system_prompt)
+            response = gemini_client.generate_content(system_prompt)
 
             # Cập nhật đè lên database
             insight, created = ClassInsight.objects.update_or_create(
@@ -301,17 +292,16 @@ class UploadClassDocumentView(APIView):
 
                         if img_tmp_paths:
                             print(f"  Found {len(img_tmp_paths)} embedded images. Describing with Gemini...")
-                            img_model = genai.GenerativeModel('gemini-flash-latest')
                             for idx, img_path in enumerate(img_tmp_paths):
                                 try:
-                                    uploaded_img = genai.upload_file(path=img_path)
-                                    desc_response = img_model.generate_content([
+                                    uploaded_img = gemini_client.upload_file(path=img_path)
+                                    desc_response = gemini_client.generate_content([
                                         uploaded_img,
                                         "Mô tả chi tiết nội dung của hình ảnh này (có thể là đồ thị, công thức, biểu đồ, mính họa...) theo ngôn ngữ Việt Nam, súc tích, chính xác."
                                     ])
                                     image_descriptions.append(f"[Hình ảnh {idx+1}]: {desc_response.text}")
                                     try:
-                                        genai.delete_file(uploaded_img.name)
+                                        gemini_client.delete_file(uploaded_img.name)
                                     except Exception:
                                         pass
                                 except Exception as img_err:
@@ -334,15 +324,14 @@ class UploadClassDocumentView(APIView):
             if not extracted_text.strip():
                 try:
                     print(f"Uploading file {tmp_file_path} to Gemini for text extraction...")
-                    uploaded_file = genai.upload_file(path=tmp_file_path)
+                    uploaded_file = gemini_client.upload_file(path=tmp_file_path)
 
-                    model_extract = genai.GenerativeModel('gemini-flash-latest')
                     prompt = "Hãy trích xuất lại toàn bộ văn bản và bảng biểu có trong tài liệu này một cách chính xác nhất. Đừng thêm bớt nội dung bình luận nào cả. Chỉ nguyên văn bản trong tài liệu."
-                    response = model_extract.generate_content([uploaded_file, prompt])
+                    response = gemini_client.generate_content([uploaded_file, prompt])
                     extracted_text = response.text
 
                     try:
-                        genai.delete_file(uploaded_file.name)
+                        gemini_client.delete_file(uploaded_file.name)
                     except Exception:
                         pass
                 except Exception as gemini_err:
@@ -369,13 +358,11 @@ class UploadClassDocumentView(APIView):
                     chunks.append(chunk)
 
             for idx, chunk_text in enumerate(chunks):
-                embed_result = genai.embed_content(
-                    model="models/gemini-embedding-001",
+                embedding = gemini_client.embed_content(
                     content=chunk_text,
-                    task_type="retrieval_document",
-                    output_dimensionality=768
+                    task_type="RETRIEVAL_DOCUMENT",
+                    output_dimensionality=768,
                 )
-                embedding = embed_result['embedding']
                 DocumentChunk.objects.create(
                     document=doc_obj,
                     chunk_index=idx,

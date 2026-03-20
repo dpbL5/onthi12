@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
+import dj_database_url
 from dotenv import load_dotenv
 
 # Load environment variables from .env at project root
@@ -92,17 +93,56 @@ TEMPLATES = [
 WSGI_APPLICATION = 'nvh_learning.wsgi.application'
 
 
-# Database – PostgreSQL (loaded from .env)
-DATABASES = {
-    'default': {
-        'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.postgresql'),
-        'NAME': os.getenv('DB_NAME', 'nvhlearningdb'),
-        'USER': os.getenv('DB_USER', 'admindb'),
-        'PASSWORD': os.getenv('DB_PASSWORD', ''),
-        'HOST': os.getenv('DB_HOST', 'localhost'),
-        'PORT': os.getenv('DB_PORT', '5432'),
+# Database configuration
+# Support flexible DATABASE_URL and Neon (serverless Postgres) SSL options.
+if DEBUG:
+    # If DEBUG = True, connect to local Docker database using individual environment variables
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('DB_NAME', 'nvhlearningdb'),
+            'USER': os.getenv('DB_USER', 'admindb'),
+            'PASSWORD': os.getenv('DB_PASSWORD', ''),
+            'HOST': os.getenv('DB_HOST', 'localhost'),
+            'PORT': os.getenv('DB_PORT', '5432'),
+        }
     }
-}
+else:
+    # If DEBUG = False, use DATABASE_URL (typically for production/Neon)
+    DATABASE_URL = os.getenv('DATABASE_URL')
+    DB_CONN_MAX_AGE = int(os.getenv('DB_CONN_MAX_AGE', '600'))
+    if DATABASE_URL:
+        DATABASES = {
+            'default': dj_database_url.parse(DATABASE_URL, conn_max_age=DB_CONN_MAX_AGE)
+        }
+    else:
+        # Fallback to local if DATABASE_URL is missing even in production (should not happen usually)
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': os.getenv('DB_NAME', 'nvhlearningdb'),
+                'USER': os.getenv('DB_USER', 'admindb'),
+                'PASSWORD': os.getenv('DB_PASSWORD', ''),
+                'HOST': os.getenv('DB_HOST', 'localhost'),
+                'PORT': os.getenv('DB_PORT', '5432'),
+            }
+        }
+    # Ensure Postgres engine is set if not already determined by dj_database_url
+    DATABASES['default'].setdefault('ENGINE', 'django.db.backends.postgresql')
+
+# SSL / OPTIONS handling: Neon and many hosted Postgres require sslmode=require
+# Prefer explicit env var `DB_SSLMODE` or `PGSSLMODE`, otherwise auto-enable for neon hosts.
+pg_sslmode = os.getenv('DB_SSLMODE') or os.getenv('PGSSLMODE', '')
+db_host = DATABASES['default'].get('HOST', '').lower()
+
+if 'neon' in db_host or 'require' in pg_sslmode.lower():
+    DATABASES['default'].setdefault('OPTIONS', {})
+    DATABASES['default']['OPTIONS'].update({'sslmode': 'require'})
+
+# Allow providing a path to an SSL root certificate
+if os.getenv('DB_SSLROOTCERT'):
+    DATABASES['default'].setdefault('OPTIONS', {})
+    DATABASES['default']['OPTIONS']['sslrootcert'] = os.getenv('DB_SSLROOTCERT')
 
 
 # Password validation

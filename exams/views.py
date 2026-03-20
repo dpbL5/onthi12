@@ -6,12 +6,11 @@ from django.utils import timezone
 from django.db.models import Q
 from django.db import transaction
 from django.core.files.base import ContentFile
-from classes.models import Class, Topic
+from classes.models import Class
 from .models import Question, Option, Quiz, QuizQuestion, QuizAttempt, StudentAnswer, ImageBank, QuestionImage
 from .serializers import (
     QuestionSerializer, OptionSerializer, QuizSerializer,
     QuizQuestionSerializer, QuizAttemptSerializer, QuizQuestionPublicSerializer,
-    TopicSerializer,
 )
 import hashlib
 import os
@@ -38,24 +37,7 @@ class IsTeacherOrAdminOrStudentReadOnly(permissions.BasePermission):
         return False
 
 
-# ─── TEACHER / ADMIN: Topic CRUD ─────────────────────────────────────────────
 
-class TopicListCreateView(generics.ListCreateAPIView):
-    """Giáo viên xem và tạo chủ đề cho môn học"""
-    serializer_class = TopicSerializer
-    permission_classes = [permissions.IsAuthenticated, IsTeacherOrAdmin]
-
-    def get_queryset(self):
-        subject_id = self.request.query_params.get('subject')
-        qs = Topic.objects.all()
-        if subject_id:
-            qs = qs.filter(subject_id=subject_id)
-        return qs
-
-class TopicDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Topic.objects.all()
-    serializer_class = TopicSerializer
-    permission_classes = [permissions.IsAuthenticated, IsTeacherOrAdmin]
 
 
 # ─── TEACHER / ADMIN: Question Bank CRUD ─────────────────────────────────────
@@ -68,7 +50,7 @@ class QuestionListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         qs = (
             Question.objects
-            .select_related('subject', 'topic', 'created_by')
+            .select_related('subject', 'created_by')
             .prefetch_related('options', 'question_images__image', 'question_images__uploaded_by')
             .order_by('-created_at')
         )
@@ -95,7 +77,7 @@ class QuestionListCreateView(generics.ListCreateAPIView):
 class QuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = (
         Question.objects
-        .select_related('subject', 'topic', 'created_by')
+        .select_related('subject', 'created_by')
         .prefetch_related('options', 'question_images__image', 'question_images__uploaded_by')
     )
     serializer_class = QuestionSerializer
@@ -151,7 +133,6 @@ class UpdateQuestionFullView(APIView):
             'question_type': payload.get('question_type'),
             'context': payload.get('context'),
             'correct_answer_text': payload.get('correct_answer_text'),
-            'topic_id': payload.get('topic_id') if 'topic_id' in payload else '__keep__',
             'options': payload.get('options') if 'options' in payload else None,
         }
 
@@ -202,8 +183,7 @@ class UpdateQuestionFullView(APIView):
             if normalized['correct_answer_text'] is not None:
                 q.correct_answer_text = normalized['correct_answer_text']
 
-            if normalized['topic_id'] != '__keep__':
-                q.topic_id = normalized['topic_id'] or None
+
 
             q.save()
 
@@ -219,7 +199,7 @@ class UpdateQuestionFullView(APIView):
 
         q = (
             Question.objects
-            .select_related('subject', 'topic', 'created_by')
+            .select_related('subject', 'created_by')
             .prefetch_related('options', 'question_images__image', 'question_images__uploaded_by')
             .get(pk=pk)
         )
@@ -647,54 +627,7 @@ class QuizSubmitView(APIView):
         })
 
 
-class RandomQuestionGeneratorView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsTeacherOrAdmin]
 
-    def post(self, request, quiz_id):
-        topic_id = request.data.get('topic_id')
-        count = int(request.data.get('count', 5))
-        difficulty = request.data.get('difficulty', 'medium')
-        
-        try:
-            quiz = Quiz.objects.get(id=quiz_id)
-            if not topic_id:
-                return Response({'error': 'Vui lòng cung cấp topic_id.'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Lấy các câu hỏi thuộc topic và difficulty, chưa có trong quiz
-            existing_q_ids = quiz.quiz_questions.values_list('question_id', flat=True)
-            candidate_qs = Question.objects.filter(
-                topic_id=topic_id,
-                difficulty=difficulty
-            ).exclude(id__in=existing_q_ids)
-            
-            import random
-            candidate_list = list(candidate_qs)
-            if not candidate_list:
-                return Response({'error': 'Không tìm thấy câu hỏi phù hợp trong ngân hàng.'}, status=status.HTTP_404_NOT_FOUND)
-                
-            selected_qs = random.sample(candidate_list, min(count, len(candidate_list)))
-            
-            max_order = 0
-            latest_qq = quiz.quiz_questions.order_by('-order').first()
-            if latest_qq:
-                max_order = latest_qq.order
-                
-            new_qqs = []
-            for i, q in enumerate(selected_qs, 1):
-                qq = QuizQuestion.objects.create(
-                    quiz=quiz,
-                    question=q,
-                    order=max_order + i,
-                    points=1.0
-                )
-                new_qqs.append(qq)
-                
-            return Response({'message': f'Đã thêm {len(new_qqs)} câu hỏi ngẫu nhiên vào đề.'})
-            
-        except Quiz.DoesNotExist:
-            return Response({'error': 'Quiz không tồn tại.'}, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ─── ANALYTICS ───────────────────────────────────────────────────────────────

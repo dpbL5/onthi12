@@ -372,7 +372,9 @@ class DocxNativeParser:
             last = merged[-1]
             # Chỉ gộp nếu cả 2 đều là text và cùng fmt
             if (last['type'] == 'text' and b['type'] == 'text'
-                    and last.get('fmt') == b.get('fmt')):
+                    and last.get('fmt') == b.get('fmt')
+                    and not str(last.get('value', '')).endswith('\n')
+                    and not str(b.get('value', '')).startswith('\n')):
                 last['value'] += b['value']
             else:
                 merged.append(b.copy())

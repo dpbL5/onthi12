@@ -60,7 +60,6 @@ class Question(models.Model):
         help_text="Đáp án đúng dạng text (dùng cho dạng Trả lời ngắn)."
     )
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='questions')
-    topic = models.ForeignKey('classes.Topic', on_delete=models.SET_NULL, null=True, blank=True, related_name='questions', help_text="Chủ đề cụ thể")
     difficulty = models.CharField(max_length=10, choices=DIFFICULTY_CHOICES, default='medium')
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_questions')
     created_at = models.DateTimeField(auto_now_add=True)

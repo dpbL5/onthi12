@@ -19,16 +19,7 @@ class Subject(models.Model):
         return self.name
 
 
-class Topic(models.Model):
-    name = models.CharField(max_length=200)
-    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='topics')
-    description = models.TextField(blank=True, null=True)
 
-    class Meta:
-        db_table = 'topics'
-
-    def __str__(self):
-        return f'{self.name} ({self.subject.name})'
 
 
 class Class(models.Model):

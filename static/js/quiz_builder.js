@@ -1,9 +1,29 @@
 let quizData = null;
 let selectedQuestions = []; 
 let questionBank = [];
-let topicsList = [];
 let editingQuestionId = null; 
 let qbEasyMDE = null;
+let currentDrafts = { file: [], rag: [] };
+
+function showInitError(message) {
+    const loadingEl = document.getElementById('loadingQuiz');
+    if (!loadingEl) return;
+    loadingEl.innerHTML = `
+        <div class="alert alert-danger d-inline-flex align-items-start gap-2 text-start" role="alert">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <div>
+                <div class="fw-bold">Không thể tải trình tạo đề thi</div>
+                <div class="small">${escapeHtml(message || 'Đã xảy ra lỗi không xác định.')}</div>
+            </div>
+        </div>
+    `;
+}
+
+function normalizeListResponse(data) {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
+}
 
 function safeEscapeHtmlForMarkdown(text) {
     if (!text) return '';
@@ -16,11 +36,14 @@ function safeEscapeHtmlForMarkdown(text) {
     return parts.join('');
 }
 
-function authHeaders() {
-    return { 
-        'Content-Type': 'application/json', 
+function authHeaders(isMultipart = false) {
+    const headers = { 
         'Authorization': 'Bearer ' + localStorage.getItem('access') 
     };
+    if (!isMultipart) {
+        headers['Content-Type'] = 'application/json';
+    }
+    return headers;
 }
 
 // ─── Helpers: Question type display ─────────────────────────────────────────
@@ -188,7 +211,6 @@ async function init() {
         }
 
         await loadQuizData();
-        await loadTopics();
         await loadSelectedQuestions();
         await loadQuestionBank();
         
@@ -196,13 +218,19 @@ async function init() {
         document.getElementById('quizContent').style.display = 'block';
     } catch (e) {
         console.error(e);
-        alert('Lỗi khởi tạo màn hình. Vui lòng đăng nhập lại.');
+        showInitError(e?.message || 'Lỗi khởi tạo màn hình. Vui lòng đăng nhập lại.');
     }
 }
 
 async function loadQuizData() {
     const res = await fetch(`/api/exams/${quizId}/`, { headers: authHeaders() });
-    if (!res.ok) { showGlobalAlert('Không tìm thấy đề thi.', 'danger'); return; }
+    if (res.status === 401) {
+        window.location.href = '/login/';
+        return;
+    }
+    if (!res.ok) {
+        throw new Error('Không tìm thấy đề thi hoặc bạn không có quyền truy cập.');
+    }
     quizData = await res.json();
     
     document.getElementById('quizTitle').textContent = quizData.title;
@@ -235,7 +263,15 @@ async function loadQuizData() {
 
 async function loadSelectedQuestions() {
     const res = await fetch(`/api/exams/${quizId}/questions/`, { headers: authHeaders() });
-    selectedQuestions = await res.json();
+    if (res.status === 401) {
+        window.location.href = '/login/';
+        return;
+    }
+    if (!res.ok) {
+        throw new Error('Không tải được danh sách câu hỏi của đề thi.');
+    }
+    const data = await res.json();
+    selectedQuestions = normalizeListResponse(data);
     renderSelectedQuestions();
 }
 
@@ -284,115 +320,19 @@ function renderSelectedQuestions() {
 
 async function loadQuestionBank() {
     const res = await fetch('/api/exams/questions/', { headers: authHeaders() });
-    questionBank = await res.json();
+    if (res.status === 401) {
+        window.location.href = '/login/';
+        return;
+    }
+    if (!res.ok) {
+        throw new Error('Không tải được ngân hàng câu hỏi.');
+    }
+    const data = await res.json();
+    questionBank = normalizeListResponse(data);
     renderQuestionBank(questionBank);
 }
 
-async function loadTopics() {
-    try {
-        const res = await fetch('/api/exams/topics/', { headers: authHeaders() });
-        if (res.ok) {
-            topicsList = await res.json();
-            renderTopics();
-        }
-    } catch (e) {
-        console.error("Lỗi khi tải chủ đề:", e);
-    }
-}
 
-function renderTopics() {
-    const filterSelect = document.getElementById('bankTopicFilter');
-    const modalSelect = document.getElementById('newQuestionTopic');
-    const listDisplay = document.getElementById('topicListDisplay');
-    
-    if (filterSelect) {
-        const currentFilter = filterSelect.value;
-        filterSelect.innerHTML = '<option value="">Tất cả chủ đề</option>';
-        topicsList.forEach(t => {
-            const opt = new Option(t.name, t.id);
-            if (t.id == currentFilter) opt.selected = true;
-            filterSelect.add(opt);
-        });
-    }
-    
-    if (modalSelect) {
-        const currentVal = modalSelect.value;
-        modalSelect.innerHTML = '<option value="">-- Không có --</option>';
-        topicsList.forEach(t => {
-            const opt = new Option(t.name, t.id);
-            if (t.id == currentVal) opt.selected = true;
-            modalSelect.add(opt);
-        });
-    }
-
-    const qbTopicSelect = document.getElementById('qbTopic');
-    if (qbTopicSelect) {
-        const currentVal = qbTopicSelect.value;
-        qbTopicSelect.innerHTML = '<option value="" disabled selected>Chọn chủ đề...</option>';
-        topicsList.forEach(t => {
-            const opt = new Option(t.name, t.id);
-            if (t.id == currentVal) opt.selected = true;
-            qbTopicSelect.add(opt);
-        });
-    }
-    
-    if (listDisplay) {
-        listDisplay.innerHTML = topicsList.map(t => `
-            <li class="list-group-item d-flex justify-content-between align-items-center">
-                <span>${escapeHtml(t.name)}</span>
-                <button class="btn btn-sm btn-outline-danger border-0" onclick="deleteTopic(${t.id})">
-                    <i class="bi bi-trash"></i>
-                </button>
-            </li>
-        `).join('');
-    }
-}
-
-function openTopicModal() {
-    new bootstrap.Modal(document.getElementById('manageTopicModal')).show();
-}
-
-async function addTopic(event) {
-    if (event) event.preventDefault();
-    const input = document.getElementById('newTopicName');
-    const name = input.value.trim();
-    if (!name) return;
-    
-    try {
-        const res = await fetch('/api/exams/topics/', {
-            method: 'POST',
-            headers: authHeaders(),
-            body: JSON.stringify({ name: name })
-        });
-        if (res.ok) {
-            input.value = '';
-            showGlobalAlert('Thêm chủ đề mới thành công.', 'success');
-            await loadTopics();
-        } else {
-            showGlobalAlert('Lỗi không thể thêm chủ đề.', 'danger');
-        }
-    } catch (e) {
-        showGlobalAlert('Lỗi kết nối.', 'danger');
-    }
-}
-
-async function deleteTopic(id) {
-    if (!confirm('Bạn có chắc muốn xoá chủ đề này?')) return;
-    try {
-        const res = await fetch(`/api/exams/topics/${id}/`, {
-            method: 'DELETE',
-            headers: authHeaders()
-        });
-        if (res.ok) {
-            showGlobalAlert('Đã xoá chủ đề.', 'warning');
-            await loadTopics();
-        } else {
-            showGlobalAlert('Lỗi không thể xoá chủ đề.', 'danger');
-        }
-    } catch (e) {
-        showGlobalAlert('Lỗi kết nối.', 'danger');
-    }
-}
 
 function renderQuestionBank(questions) {
     const list = document.getElementById('questionBankList');
@@ -429,10 +369,8 @@ function renderQuestionBank(questions) {
 
 function filterBank() {
     const term = document.getElementById('bankSearch').value.toLowerCase();
-    const topicId = document.getElementById('bankTopicFilter')?.value || '';
     const filtered = questionBank.filter(q => 
         (getQuestionDisplayText(q).toLowerCase().includes(term) || (q.subject_name || '').toLowerCase().includes(term))
-        && (!topicId || String(q.topic) === String(topicId))
     );
     renderQuestionBank(filtered);
 }
@@ -466,7 +404,7 @@ function promptRemoveQQ(qqId) {
     new bootstrap.Modal(document.getElementById('deleteConfirmModal')).show();
 }
 
-document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
+document.getElementById('confirmDeleteBtn')?.addEventListener('click', async () => {
     if (!deleteQQId) return;
     const res = await fetch(`/api/exams/${quizId}/questions/${deleteQQId}/`, {
         method: 'DELETE',
@@ -525,6 +463,39 @@ async function submitEditQuiz() {
     }
 }
 
+function previewQuiz() {
+    const body = document.getElementById('previewQuizBody');
+    if (!body) return;
+
+    if (!Array.isArray(selectedQuestions) || selectedQuestions.length === 0) {
+        body.innerHTML = '<div class="alert alert-info mb-0">Đề thi chưa có câu hỏi để xem trước.</div>';
+        new bootstrap.Modal(document.getElementById('previewQuizModal')).show();
+        return;
+    }
+
+    const rows = [...selectedQuestions]
+        .sort((a, b) => a.order - b.order)
+        .map((qq, idx) => {
+            const q = qq.question || {};
+            return `
+                <div class="card mb-3 border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="badge bg-primary">Câu ${idx + 1}</span>
+                            <span class="small text-muted">${qq.points || 0} điểm</span>
+                        </div>
+                        <div class="mb-2">${renderQuestionStem(q)}</div>
+                        <div class="small text-muted">${renderQuestionContent(q)}</div>
+                    </div>
+                </div>
+            `;
+        })
+        .join('');
+
+    body.innerHTML = rows;
+    new bootstrap.Modal(document.getElementById('previewQuizModal')).show();
+}
+
 // ─── Create Question Form Toggle ────────────────────────────────────────────
 
 function toggleQbOptions() {
@@ -580,7 +551,6 @@ async function submitCreateQuestion() {
     const text = qbEasyMDE ? qbEasyMDE.value().trim() : '';
     const difficulty = document.getElementById('newQuestionDiff').value;
     const qType = document.getElementById('qbType').value;
-    const topicId = document.getElementById('qbTopic').value || null;
     const context = (document.getElementById('qbContext')?.value || '').trim();
 
     if (!text) { errEl.textContent = "Bạn chưa nhập nội dung câu hỏi."; return; }
@@ -597,7 +567,6 @@ async function submitCreateQuestion() {
         question_type: qType,
         text: text,
         difficulty: difficulty,
-        topic_id: topicId,
         context: context
     };
 
@@ -721,7 +690,6 @@ async function editQuestion(qId) {
 
         // Populate fields
         document.getElementById('qbType').value = q.question_type;
-        document.getElementById('qbTopic').value = q.topic || '';
         document.getElementById('newQuestionDiff').value = q.difficulty;
         document.getElementById('qbContext').value = q.context || '';
         
@@ -758,298 +726,7 @@ async function editQuestion(qId) {
     }
 }
 
-// ─── AI Draft Board (Shared logic for File + RAG) ───────────────────────────
 
-let currentDrafts = { file: [], rag: [] };
-
-function renderDraftBoard(source) {
-    const drafts = currentDrafts[source];
-    const board = document.getElementById(source === 'file' ? 'aiDraftBoardFile' : 'aiDraftBoardRag');
-    
-    if (drafts.length === 0) {
-        board.innerHTML = '<div class="text-center text-muted mt-5">Không tìm thấy câu hỏi nào hợp lệ.</div>';
-        return;
-    }
-
-    let html = '';
-    drafts.forEach((q, index) => {
-        const qType = q.question_type || 'multiple_choice';
-        const unresolved = !hasConfiguredAnswer(q);
-        html += `
-            <div class="card mb-3 border-primary shadow-sm">
-                <div class="card-header bg-white d-flex justify-content-between align-items-start p-3">
-                    <div class="form-check">
-                        <input class="form-check-input ai-draft-cb-${source} mt-2" type="checkbox" value="${index}" checked id="draft_${source}_${index}">
-                        <label class="form-check-label fw-bold d-block mb-1" for="draft_${source}_${index}">Câu ${index + 1}:</label>
-                        <div class="ps-4">${renderQuestionStem(q)}</div>
-                        ${unresolved ? '<div class="ps-4 mt-1"><span class="badge bg-danger">Chưa cài đặt đáp án đúng</span></div>' : ''}
-                    </div>
-                    <div class="d-flex gap-1 align-items-center">
-                        ${typeBadge(qType)}
-                        ${diffBadge(q.difficulty)}
-                        <button class="btn btn-sm btn-outline-secondary" onclick="toggleDraftEditor('${source}', ${index})" title="Sửa trực tiếp"><i class="bi bi-pencil-square"></i></button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteDraft('${source}', ${index})" title="Xóa bản nháp"><i class="bi bi-trash"></i></button>
-                    </div>
-                </div>
-                <div class="card-body p-3">
-                    ${renderQuestionContent(q)}
-                    <div id="draft_editor_${source}_${index}" class="border rounded p-2 mt-2 bg-white" style="display:none;"></div>
-                </div>
-            </div>
-        `;
-    });
-    board.innerHTML = html;
-}
-
-function deleteDraft(source, index) {
-    if (!Array.isArray(currentDrafts[source])) return;
-    currentDrafts[source].splice(index, 1);
-    renderDraftBoard(source);
-    const saveBtn = document.getElementById(source === 'file' ? 'btnSaveDraftsFile' : 'btnSaveDraftsRag');
-    if (saveBtn) saveBtn.style.display = currentDrafts[source].length ? 'inline-block' : 'none';
-}
-
-function toggleDraftEditor(source, index) {
-    const wrap = document.getElementById(`draft_editor_${source}_${index}`);
-    if (!wrap) return;
-
-    if (wrap.style.display === 'none') {
-        wrap.style.display = 'block';
-        const q = currentDrafts[source][index] || {};
-        const qType = q.question_type || 'multiple_choice';
-        const qText = getQuestionDisplayText(q);
-        const options = Array.isArray(q.options) ? q.options : [];
-
-        let optionsHtml = '';
-        if (qType === 'short_answer') {
-            optionsHtml = `
-                <div class="mb-2">
-                    <label class="form-label small fw-bold">Đáp án đúng</label>
-                    <input type="text" class="form-control form-control-sm" id="draft_answer_${source}_${index}" value="${escapeHtml(q.correct_answer_text || '')}">
-                </div>
-            `;
-        } else {
-            optionsHtml = options.map((o, i) => `
-                <div class="row g-1 mb-2 align-items-center">
-                    <div class="col-8">
-                        <input type="text" class="form-control form-control-sm" id="draft_opt_${source}_${index}_${i}" value="${escapeHtml(getOptionDisplayText(o))}">
-                    </div>
-                    <div class="col-4">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="draft_opt_correct_${source}_${index}_${i}" ${o.is_correct ? 'checked' : ''}>
-                            <label class="form-check-label small">Đúng</label>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        wrap.innerHTML = `
-            <div class="mb-2">
-                <label class="form-label small fw-bold">Nội dung câu hỏi</label>
-                <textarea class="form-control form-control-sm" rows="3" id="draft_text_${source}_${index}">${escapeHtml(qText)}</textarea>
-            </div>
-            <div class="mb-2">
-                <label class="form-label small fw-bold">Ngữ cảnh</label>
-                <textarea class="form-control form-control-sm" rows="2" id="draft_context_${source}_${index}">${escapeHtml(q.context || '')}</textarea>
-            </div>
-            ${optionsHtml}
-            <div class="d-flex justify-content-end gap-2">
-                <button class="btn btn-sm btn-outline-secondary" onclick="toggleDraftEditor('${source}', ${index})">Đóng</button>
-                <button class="btn btn-sm btn-primary" onclick="saveDraftEditor('${source}', ${index})">Lưu chỉnh sửa nháp</button>
-            </div>
-        `;
-    } else {
-        wrap.style.display = 'none';
-        wrap.innerHTML = '';
-    }
-}
-
-function saveDraftEditor(source, index) {
-    const q = currentDrafts[source][index];
-    if (!q) return;
-
-    const qType = q.question_type || 'multiple_choice';
-    const textEl = document.getElementById(`draft_text_${source}_${index}`);
-    const ctxEl = document.getElementById(`draft_context_${source}_${index}`);
-
-    q.text = (textEl?.value || '').trim();
-    q.context = (ctxEl?.value || '').trim();
-
-    if (qType === 'short_answer') {
-        const ansEl = document.getElementById(`draft_answer_${source}_${index}`);
-        q.correct_answer_text = (ansEl?.value || '').trim();
-    } else {
-        const options = Array.isArray(q.options) ? q.options : [];
-        options.forEach((o, i) => {
-            const textInput = document.getElementById(`draft_opt_${source}_${index}_${i}`);
-            const correctInput = document.getElementById(`draft_opt_correct_${source}_${index}_${i}`);
-            o.text = (textInput?.value || '').trim();
-            o.is_correct = !!correctInput?.checked;
-        });
-
-        if (qType === 'multiple_choice' && options.filter((o) => o.is_correct).length > 1) {
-            let found = false;
-            options.forEach((o) => {
-                if (o.is_correct && !found) found = true;
-                else if (o.is_correct && found) o.is_correct = false;
-            });
-        }
-    }
-
-    renderDraftBoard(source);
-    showGlobalAlert('Đã cập nhật bản nháp.', 'success');
-}
-
-function selectAllDrafts(source) {
-    const checkboxes = document.querySelectorAll(`.ai-draft-cb-${source}`);
-    let allChecked = true;
-    checkboxes.forEach(cb => { if (!cb.checked) allChecked = false; });
-    checkboxes.forEach(cb => cb.checked = !allChecked);
-}
-
-async function saveSelectedDrafts(source) {
-    const checkboxes = document.querySelectorAll(`.ai-draft-cb-${source}:checked`);
-    if (checkboxes.length === 0) { alert('Vui lòng chọn ít nhất 1 câu hỏi.'); return; }
-
-    const selectedDrafts = [];
-    checkboxes.forEach(cb => { selectedDrafts.push(currentDrafts[source][parseInt(cb.value)]); });
-
-    const btnId = source === 'file' ? 'btnSaveDraftsFile' : 'btnSaveDraftsRag';
-    const btn = document.getElementById(btnId);
-    const shouldAddToQuiz = !!document.getElementById(source === 'file' ? 'saveToQuizFile' : 'saveToQuizRag')?.checked;
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Đang lưu...';
-
-    try {
-        const classRes = await fetch(`/api/classes/${quizData.classroom}/`, { headers: authHeaders() });
-        const classData = await classRes.json();
-        
-        const res = await fetch('/api/ai/generate/save-bulk/', {
-            method: 'POST',
-            headers: authHeaders(),
-            body: JSON.stringify({
-                questions: selectedDrafts,
-                quiz_id: shouldAddToQuiz ? quizId : null,
-                subject_id: classData.subject,
-            })
-        });
-
-        if (res.ok) {
-            showGlobalAlert(`Đã nhập ${selectedDrafts.length} câu hỏi thành công!`, 'success');
-            bootstrap.Modal.getInstance(document.getElementById('aiGeneratorModal')).hide();
-            await loadQuizData();
-            await loadSelectedQuestions();
-            await loadQuestionBank();
-            currentDrafts[source] = [];
-            document.getElementById(source === 'file' ? 'aiDraftBoardFile' : 'aiDraftBoardRag').innerHTML = '';
-        } else {
-            const err = await res.json();
-            alert("Lỗi lưu: " + (err.error || "Unknown error"));
-        }
-    } catch (e) {
-        alert('Lỗi kết nối.');
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-cloud-arrow-up me-1"></i>Lưu các câu đã chọn';
-    }
-}
-
-// ─── Tab 1: File Extraction ─────────────────────────────────────────────────
-
-document.getElementById('aiExtractForm').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    const fileInput = document.getElementById('aiFileInput');
-    const file = fileInput.files[0];
-    if (!file) return;
-
-    const btn = document.getElementById('btnExtractAI');
-    const loader = document.getElementById('aiExtractLoading');
-    const errBox = document.getElementById('aiExtractError');
-    const saveBtn = document.getElementById('btnSaveDraftsFile');
-
-    errBox.textContent = '';
-    btn.disabled = true;
-    loader.style.display = 'block';
-    saveBtn.style.display = 'none';
-
-    try {
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const res = await fetch('/api/ai/generate/extract-file/', {
-            method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access') },
-            body: formData
-        });
-
-        const data = await res.json();
-        if (res.ok) {
-            currentDrafts.file = data.questions;
-            renderDraftBoard('file');
-            if (currentDrafts.file.length > 0) saveBtn.style.display = 'inline-block';
-        } else {
-            errBox.textContent = data.error || 'Lỗi trích xuất từ server.';
-        }
-    } catch (err) {
-        errBox.textContent = 'Lỗi kết nối tới AI Service.';
-    } finally {
-        btn.disabled = false;
-        loader.style.display = 'none';
-        fileInput.value = '';
-    }
-});
-
-// ─── Tab 2: RAG Generation ──────────────────────────────────────────────────
-
-document.getElementById('ragGenerateForm').addEventListener('submit', async function(e) {
-    e.preventDefault();
-
-    const topic = document.getElementById('ragTopic').value.trim();
-    const count = document.getElementById('ragCount').value;
-    const difficulty = document.getElementById('ragDifficulty').value;
-    const questionTypes = document.getElementById('ragQuestionTypes').value;
-
-    if (!topic) return;
-
-    const btn = document.getElementById('btnGenerateRAG');
-    const loader = document.getElementById('ragLoading');
-    const errBox = document.getElementById('ragError');
-    const saveBtn = document.getElementById('btnSaveDraftsRag');
-
-    errBox.textContent = '';
-    btn.disabled = true;
-    loader.style.display = 'block';
-    saveBtn.style.display = 'none';
-
-    try {
-        const res = await fetch('/api/ai/generate/from-rag/', {
-            method: 'POST',
-            headers: authHeaders(),
-            body: JSON.stringify({
-                class_id: quizData.classroom,
-                topic: topic,
-                count: parseInt(count),
-                difficulty: difficulty,
-                question_types: questionTypes,
-            })
-        });
-
-        const data = await res.json();
-        if (res.ok) {
-            currentDrafts.rag = data.questions;
-            renderDraftBoard('rag');
-            if (currentDrafts.rag.length > 0) saveBtn.style.display = 'inline-block';
-        } else {
-            errBox.textContent = data.error || 'Lỗi sinh câu hỏi từ tri thức nội bộ.';
-        }
-    } catch (err) {
-        errBox.textContent = 'Lỗi kết nối tới AI Service.';
-    } finally {
-        btn.disabled = false;
-        loader.style.display = 'none';
-    }
-});
 
 // ─── Delete Quiz ────────────────────────────────────────────────────────────
 
@@ -1149,5 +826,248 @@ function copyMarkdownImage(url) {
         console.error('Lỗi copy: ', err);
     });
 }
+
+// ─── AI Draft Board (Builder) ─────────────────────────────────────────────
+
+// Guard chống thoát trang khi AI đang xử lý
+let aiParsingInProgress = false;
+window.addEventListener('beforeunload', function(e) {
+    if (aiParsingInProgress) {
+        e.preventDefault();
+        e.returnValue = 'AI đang phân tích tài liệu. Nếu thoát, dữ liệu sẽ bị mất. Bạn có chắc muốn rời trang?';
+        return e.returnValue;
+    }
+});
+
+function renderDraftBoard(source) {
+    const drafts = currentDrafts[source];
+    const board = document.getElementById(source === 'file' ? 'aiDraftBoardFile' : 'aiDraftBoardRag');
+    if (!board) return;
+
+    if (!drafts.length) {
+        board.innerHTML = '<div class="text-center text-muted mt-5">Không tìm thấy câu hỏi nào hợp lệ.</div>';
+        return;
+    }
+
+    board.innerHTML = drafts.map((q, index) => {
+        const qType = q.question_type || 'multiple_choice';
+        const unresolved = !hasConfiguredAnswer(q);
+        return `
+            <div class="card mb-3 border-primary shadow-sm">
+                <div class="card-header bg-white d-flex justify-content-between align-items-start p-3">
+                    <div class="form-check">
+                        <input class="form-check-input ai-draft-cb-${source} mt-2" type="checkbox" value="${index}" checked id="draft_${source}_${index}">
+                        <label class="form-check-label fw-bold d-block mb-1" for="draft_${source}_${index}">Câu ${index + 1}:</label>
+                        <div class="ps-4">${renderQuestionStem(q)}</div>
+                        ${unresolved ? '<div class="ps-4 mt-1"><span class="badge bg-danger">Chưa cài đặt đáp án đúng</span></div>' : ''}
+                    </div>
+                    <div class="d-flex gap-1 align-items-center">
+                        ${typeBadge(qType)}
+                        ${diffBadge(q.difficulty)}
+                    </div>
+                </div>
+                <div class="card-body p-3">
+                    ${renderQuestionContent(q)}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function selectAllDrafts(source) {
+    const checkboxes = document.querySelectorAll(`.ai-draft-cb-${source}`);
+    let allChecked = true;
+    checkboxes.forEach((cb) => { if (!cb.checked) allChecked = false; });
+    checkboxes.forEach((cb) => { cb.checked = !allChecked; });
+}
+
+async function saveSelectedDrafts(source) {
+    const checkboxes = document.querySelectorAll(`.ai-draft-cb-${source}:checked`);
+    if (checkboxes.length === 0) {
+        alert('Vui lòng chọn ít nhất 1 câu hỏi.');
+        return;
+    }
+
+    const selectedDrafts = [];
+    checkboxes.forEach((cb) => selectedDrafts.push(currentDrafts[source][parseInt(cb.value, 10)]));
+
+    const btnId = source === 'file' ? 'btnSaveDraftsFile' : 'btnSaveDraftsRag';
+    const saveToQuizSwitchId = source === 'file' ? 'saveToQuizFile' : 'saveToQuizRag';
+    const shouldAddToQuiz = !!document.getElementById(saveToQuizSwitchId)?.checked;
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Đang lưu...';
+
+    try {
+        const res = await fetch('/api/ai/generate/save-bulk/', {
+            method: 'POST',
+            headers: authHeaders(),
+            body: JSON.stringify({
+                questions: selectedDrafts,
+                quiz_id: shouldAddToQuiz ? quizId : null,
+                subject_id: quizData?.subject_id,
+            }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            alert(`Lỗi lưu: ${data.error || 'Unknown error'}`);
+            return;
+        }
+
+        showGlobalAlert(`Đã nhập ${selectedDrafts.length} câu hỏi thành công!`, 'success');
+        bootstrap.Modal.getInstance(document.getElementById('aiGeneratorModal'))?.hide();
+
+        await loadQuizData();
+        await loadSelectedQuestions();
+        await loadQuestionBank();
+
+        currentDrafts[source] = [];
+        const board = document.getElementById(source === 'file' ? 'aiDraftBoardFile' : 'aiDraftBoardRag');
+        if (board) {
+            board.innerHTML = '<div class="text-center text-muted mt-5">Không tìm thấy câu hỏi nào hợp lệ.</div>';
+        }
+    } catch (e) {
+        alert('Lỗi kết nối.');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-cloud-arrow-up me-1"></i>Lưu các câu đã chọn';
+    }
+}
+
+function bindAiGeneratorEvents() {
+    const aiExtractForm = document.getElementById('aiExtractForm');
+    if (aiExtractForm && !aiExtractForm.dataset.bound) {
+        aiExtractForm.dataset.bound = '1';
+        aiExtractForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fileInput = document.getElementById('aiFileInput');
+            const file = fileInput?.files?.[0];
+            if (!file) return;
+
+            const btn = document.getElementById('btnExtractAI');
+            const loader = document.getElementById('aiExtractLoading');
+            const errBox = document.getElementById('aiExtractError');
+            const saveBtn = document.getElementById('btnSaveDraftsFile');
+
+            if (errBox) errBox.textContent = '';
+            if (btn) btn.disabled = true;
+            if (saveBtn) saveBtn.style.display = 'none';
+
+            // Hiện loader kèm thông báo thời gian xử lý
+            if (loader) {
+                loader.innerHTML = `
+                    <div class="d-flex align-items-center gap-2 text-primary">
+                        <span class="spinner-border spinner-border-sm" role="status"></span>
+                        <span><strong>AI đang phân tích tài liệu...</strong><br>
+                        <small class="text-muted">Quá trình này có thể mất 1–3 phút tuỳ dung lượng file. Vui lòng <strong>không đóng hoặc chuyển trang</strong> trong thời gian chờ.</small></span>
+                    </div>`;
+                loader.style.display = 'block';
+            }
+
+            // Bật guard chống thoát trang
+            aiParsingInProgress = true;
+
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const res = await fetch('/api/ai/generate/extract-file/', {
+                    method: 'POST',
+                    headers: { Authorization: 'Bearer ' + localStorage.getItem('access') },
+                    body: formData,
+                });
+
+                const data = await res.json();
+                if (!res.ok) {
+                    if (errBox) errBox.textContent = data.error || 'Lỗi trích xuất từ server.';
+                    return;
+                }
+
+                currentDrafts.file = Array.isArray(data.questions) ? data.questions : [];
+                renderDraftBoard('file');
+                if (saveBtn && currentDrafts.file.length) saveBtn.style.display = 'inline-block';
+            } catch (err) {
+                if (errBox) errBox.textContent = 'Lỗi kết nối tới AI Service.';
+            } finally {
+                aiParsingInProgress = false;
+                if (btn) btn.disabled = false;
+                if (loader) { loader.style.display = 'none'; loader.innerHTML = ''; }
+                if (fileInput) fileInput.value = '';
+            }
+        });
+    }
+
+    const ragGenerateForm = document.getElementById('ragGenerateForm');
+    if (ragGenerateForm && !ragGenerateForm.dataset.bound) {
+        ragGenerateForm.dataset.bound = '1';
+        ragGenerateForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const topic = (document.getElementById('ragTopic')?.value || '').trim();
+            const count = document.getElementById('ragCount')?.value;
+            const difficulty = document.getElementById('ragDifficulty')?.value;
+            const questionTypes = document.getElementById('ragQuestionTypes')?.value;
+            if (!topic) return;
+
+            const btn = document.getElementById('btnGenerateRAG');
+            const loader = document.getElementById('ragLoading');
+            const errBox = document.getElementById('ragError');
+            const saveBtn = document.getElementById('btnSaveDraftsRag');
+
+            if (errBox) errBox.textContent = '';
+            if (btn) btn.disabled = true;
+            if (saveBtn) saveBtn.style.display = 'none';
+
+            // Hiện loader kèm thông báo thời gian xử lý
+            if (loader) {
+                loader.innerHTML = `
+                    <div class="d-flex align-items-center gap-2 text-primary">
+                        <span class="spinner-border spinner-border-sm" role="status"></span>
+                        <span><strong>AI đang tạo câu hỏi từ tài liệu nội bộ...</strong><br>
+                        <small class="text-muted">Quá trình này có thể mất 30 giây – 2 phút. Vui lòng <strong>không đóng hoặc chuyển trang</strong> trong thời gian chờ.</small></span>
+                    </div>`;
+                loader.style.display = 'block';
+            }
+
+            // Bật guard chống thoát trang
+            aiParsingInProgress = true;
+
+            try {
+                const res = await fetch('/api/ai/generate/from-rag/', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({
+                        class_id: quizData?.classroom,
+                        topic,
+                        count: parseInt(count, 10),
+                        difficulty,
+                        question_types: questionTypes,
+                    }),
+                });
+
+                const data = await res.json();
+                if (!res.ok) {
+                    if (errBox) errBox.textContent = data.error || 'Lỗi sinh câu hỏi từ tri thức nội bộ.';
+                    return;
+                }
+
+                currentDrafts.rag = Array.isArray(data.questions) ? data.questions : [];
+                renderDraftBoard('rag');
+                if (saveBtn && currentDrafts.rag.length) saveBtn.style.display = 'inline-block';
+            } catch (err) {
+                if (errBox) errBox.textContent = 'Lỗi kết nối tới AI Service.';
+            } finally {
+                aiParsingInProgress = false;
+                if (btn) btn.disabled = false;
+                if (loader) { loader.style.display = 'none'; loader.innerHTML = ''; }
+            }
+        });
+    }
+}
+
+document.addEventListener('DOMContentLoaded', bindAiGeneratorEvents);
 
 init();

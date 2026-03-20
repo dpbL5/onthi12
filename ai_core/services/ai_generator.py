@@ -5,21 +5,39 @@ import tempfile
 import docx
 import uuid
 import re
-import google.generativeai as genai
+import time
 from typing import List, Dict, Any
 from django.conf import settings
+from . import gemini_client
 
 # Ensure API key and model name are configured
 api_key = os.environ.get('GEMINI_API_KEY')
-model_name = os.environ.get('GEMINI_MODEL_NAME', 'gemini-flash-latest')
+model_name = os.environ.get('GEMINI_MODEL_NAME', gemini_client.get_default_model())
 
-if api_key:
-    genai.configure(api_key=api_key)
+# Cấu hình generation ưu tiên output JSON ổn định và giảm biến thiên.
+GENERATION_CONFIG_JSON_STRICT = {
+    'response_mime_type': 'application/json',
+    'temperature': 0.1,
+    'max_output_tokens': 65536,
+}
+
+GENERATION_CONFIG_RAG = {
+    'response_mime_type': 'application/json',
+    'temperature': 0.2,
+    'max_output_tokens': 16384,
+}
+
+# Số blocks tối đa mỗi chunk khi gọi Gemini
+CHUNK_BLOCK_SIZE = 450
+# Nếu tất cả compact blocks <= ngưỡng này, gọp 1 lần gọi duy nhất
+SINGLE_SHOT_THRESHOLD = 500
 
 # ─── Prompt: Trích xuất câu hỏi đa dạng từ tài liệu ────────────────────────
 EXTRACTION_PROMPT = """
 Bạn là hệ thống trích xuất dữ liệu bài tập (Data Extractor) cho nền tảng giáo dục.
 Nhiệm vụ: đọc nội dung tài liệu (dạng chuỗi content_blocks) và bóc tách ra toàn bộ CÂU HỎI, phân loại theo 3 dạng format đề thi THPT 2025:
+
+YÊU CẦU BẮT BUỘC: Phải trích xuất TẤT CẢ câu hỏi có trong tài liệu, không được dừng ở câu đầu tiên.
 
 DẠNG 1 — multiple_choice (Trắc nghiệm chọn 1/4):
   - Mỗi câu có 4 phương án A, B, C, D. Thí sinh chọn 1 đáp án đúng duy nhất.
@@ -121,6 +139,7 @@ Nhiệm vụ:
 - Đọc tài liệu đầu vào (PDF hoặc ảnh).
 - Trích xuất các câu hỏi theo 3 dạng: multiple_choice, true_false, short_answer.
 - Nếu không chắc đáp án đúng, để is_correct=false hoặc để trống correct_answer_text.
+- BẮT BUỘC trích xuất đầy đủ tất cả câu hỏi có trong tài liệu, không chỉ câu đầu tiên.
 
 QUAN TRỌNG:
 1. Trả về duy nhất JSON array, không có giải thích.
@@ -229,6 +248,17 @@ class AIGeneratorService:
     """Service tạo/trích xuất câu hỏi bằng AI — dùng chung cho cả File extraction và RAG."""
 
     @staticmethod
+    def _extract_question_list_from_parsed(parsed: Any) -> List[Dict[str, Any]]:
+        if isinstance(parsed, list):
+            return parsed
+        if isinstance(parsed, dict):
+            for key in ('questions', 'items', 'data', 'results'):
+                value = parsed.get(key)
+                if isinstance(value, list):
+                    return value
+        return []
+
+    @staticmethod
     def _parse_gemini_json(text: str) -> List[Dict[str, Any]]:
         """Làm sạch response của Gemini và parse thành JSON."""
         clean_text = text.strip()
@@ -236,8 +266,9 @@ class AIGeneratorService:
         # 1) Parse trực tiếp nếu response đã là JSON thuần.
         try:
             parsed = json.loads(clean_text)
-            if isinstance(parsed, list):
-                return parsed
+            parsed_list = AIGeneratorService._extract_question_list_from_parsed(parsed)
+            if parsed_list:
+                return parsed_list
         except json.JSONDecodeError:
             pass
 
@@ -246,8 +277,9 @@ class AIGeneratorService:
         for block in code_blocks:
             try:
                 parsed = json.loads(block.strip())
-                if isinstance(parsed, list):
-                    return parsed
+                parsed_list = AIGeneratorService._extract_question_list_from_parsed(parsed)
+                if parsed_list:
+                    return parsed_list
             except json.JSONDecodeError:
                 continue
 
@@ -256,15 +288,80 @@ class AIGeneratorService:
         if candidate:
             try:
                 parsed = json.loads(candidate)
-                if isinstance(parsed, list):
-                    return parsed
+                parsed_list = AIGeneratorService._extract_question_list_from_parsed(parsed)
+                if parsed_list:
+                    return parsed_list
             except json.JSONDecodeError:
                 pass
 
         print("--- FAILED TO PARSE GEMINI JSON ---")
         print(f"Raw Text: {text[:1200]}...")
         print("------------------------------------")
+
+        # 4) Fallback: cố gắng sửa JSON bị cắt.
+        repaired = AIGeneratorService._repair_truncated_json(clean_text)
+        if repaired:
+            try:
+                parsed = json.loads(repaired)
+                parsed_list = AIGeneratorService._extract_question_list_from_parsed(parsed)
+                if parsed_list:
+                    print(f"[parse] Recovered {len(parsed_list)} items from truncated JSON.")
+                    return parsed_list
+            except json.JSONDecodeError:
+                pass
+
         return []
+
+    @staticmethod
+    def _repair_truncated_json(text: str) -> str:
+        """
+        Cố gắng vá JSON array bị cắt giữa chừng bằng cách:
+        1. Tìm vị trí object cuối cùng hoàn chỉnh trong array.
+        2. Đóng array tại đó.
+        Trả về chuỗi JSON hợp lệ hoặc rỗng nếu không phục hồi được.
+        """
+        # Tìm phần bắt đầu array
+        start = text.find('[')
+        if start == -1:
+            return ''
+
+        # Dùng bracket matching để tìm object cuối cùng hoàn chỉnh
+        depth = 0
+        in_string = False
+        escaped = False
+        last_complete_obj_end = -1
+        obj_depth_start = -1
+
+        for i in range(start, len(text)):
+            ch = text[i]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif ch == '\\':
+                    escaped = True
+                elif ch == '"':
+                    in_string = False
+                continue
+
+            if ch == '"':
+                in_string = True
+            elif ch == '[':
+                depth += 1
+            elif ch == ']':
+                depth -= 1
+                if depth == 0:
+                    return ''  # Array hoàn chỉnh, không cần sửa
+            elif ch == '{' and depth == 1:
+                obj_depth_start = i
+            elif ch == '}' and depth == 1:
+                last_complete_obj_end = i
+
+        if last_complete_obj_end == -1:
+            return ''
+
+        # Cắt tại object hoàn chỉnh cuối cùng + đóng array
+        repaired = text[start:last_complete_obj_end + 1] + ']'
+        return repaired
 
     @staticmethod
     def _extract_first_json_array(text: str) -> str:
@@ -316,34 +413,175 @@ class AIGeneratorService:
         return any(isinstance(b, dict) and b.get('type') == 'image' for b in blocks)
 
     @staticmethod
-    def _compact_blocks_for_prompt(blocks: List[Dict[str, Any]], max_blocks: int = 1200) -> List[Dict[str, Any]]:
+    def _is_content_block(item: Any) -> bool:
+        if not isinstance(item, dict):
+            return False
+        return item.get('type') in ('text', 'image') and ('value' in item or 'sha256' in item)
+
+    @staticmethod
+    def _looks_like_content_blocks_list(items: Any) -> bool:
+        """True chỉ khi list này hoàn toàn là content blocks,
+        không phải question objects (có question_type key)."""
+        if not isinstance(items, list) or not items:
+            return False
+        # Nếu bất kỳ item nào có question_type hoặc text key → đây là questions
+        if any(
+            isinstance(it, dict) and ('question_type' in it or 'options' in it)
+            for it in items
+        ):
+            return False
+        block_count = sum(1 for it in items if AIGeneratorService._is_content_block(it))
+        return block_count / len(items) >= 0.8
+
+    @staticmethod
+    def _to_question_from_blocks(blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
+        # Fallback: khi model trả về content blocks thay vì question objects.
+        return {
+            'question_type': 'short_answer',
+            'difficulty': 'medium',
+            'content_json': blocks,
+            'correct_answer_text': '',
+        }
+
+    @staticmethod
+    def _count_question_markers(text: str) -> int:
+        if not text:
+            return 0
+        patterns = [
+            r'\bcâu\s*\d+\b',
+            r'(^|\n)\s*\d+\s*[\).:-]',
+            r'(^|\n)\s*[ivxlcdm]+\s*[\).:-]',
+        ]
+        total = 0
+        for p in patterns:
+            total += len(re.findall(p, text, flags=re.IGNORECASE | re.MULTILINE))
+        return total
+
+    @staticmethod
+    def _split_text_to_short_answer_questions(text: str, max_questions: int = 200) -> List[Dict[str, Any]]:
+        if not text or not text.strip():
+            return []
+
+        splitter = re.compile(
+            r'(?=(?:^|\n)\s*(?:câu\s*\d+|\d+\s*[\).:-]|[ivxlcdm]+\s*[\).:-]))',
+            flags=re.IGNORECASE,
+        )
+        chunks = [c.strip() for c in splitter.split(text) if c and c.strip()]
+
+        if len(chunks) <= 1:
+            return []
+
+        questions = []
+        for chunk in chunks[:max_questions]:
+            questions.append({
+                'question_type': 'short_answer',
+                'difficulty': 'medium',
+                'content_json': [{'type': 'text', 'value': chunk}],
+                'correct_answer_text': '',
+            })
+        return questions
+
+    @staticmethod
+    def _fallback_questions_from_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        text = AIGeneratorService._blocks_to_text(blocks)
+        marker_count = AIGeneratorService._count_question_markers(text)
+        if marker_count >= 2:
+            split_qs = AIGeneratorService._split_text_to_short_answer_questions(text)
+            if split_qs:
+                print(f"[fallback] Split block text into {len(split_qs)} question candidates (markers={marker_count}).")
+                return split_qs
+        return [AIGeneratorService._to_question_from_blocks(blocks)]
+
+    @staticmethod
+    def _compact_blocks_for_prompt(blocks: List[Dict[str, Any]], max_blocks: int = 1400) -> List[Dict[str, Any]]:
         """
         Giảm token đầu vào bằng cách chỉ giữ field cần thiết cho model.
-        V2: Giữ lại `fmt` (bold, underline, highlight, color) để AI nhận diện đáp án đúng.
+        V3: Loại `url` khỏi image block — giảm đáng kể input token.
         """
         compact = []
-        for b in blocks[:max_blocks]:
+        for b in blocks:
             if not isinstance(b, dict):
                 continue
             b_type = b.get('type')
             if b_type == 'text':
-                val = (b.get('value') or '').strip()
-                if not val:
+                raw_val = b.get('value') or ''
+                if not str(raw_val).strip():
                     continue
-                item = {'type': 'text', 'value': val}
+                # Giữ xuống dòng để model nhận diện ranh giới câu hỏi tốt hơn.
+                item = {'type': 'text', 'value': raw_val}
                 # Giữ lại fmt nếu có — đây là tín hiệu đáp án đúng quan trọng
                 fmt = b.get('fmt')
                 if fmt:
                     item['fmt'] = fmt
                 compact.append(item)
             elif b_type == 'image':
+                # QUAN TRỌNG: Bỏ `url` — chỉ giữ sha256 + kích thước để model biết ảnh ở đây.
                 item = {'type': 'image', 'sha256': b.get('sha256')}
                 if b.get('width_pt') is not None:
                     item['width_pt'] = b.get('width_pt')
                 if b.get('height_pt') is not None:
                     item['height_pt'] = b.get('height_pt')
                 compact.append(item)
-        return compact
+
+        if len(compact) <= max_blocks:
+            return compact
+
+        # Giữ lại phần đầu và ưu tiên giữ đuôi nếu có bảng đáp án ở cuối tài liệu.
+        answer_tbl_idx = [
+            i for i, it in enumerate(compact)
+            if isinstance(it, dict)
+            and it.get('type') == 'text'
+            and '[BẢNG ĐÁP ÁN]' in str(it.get('value', '')).upper()
+        ]
+        if not answer_tbl_idx:
+            return compact[:max_blocks]
+
+        tail_start = max(0, answer_tbl_idx[-1] - 40)
+        tail = compact[tail_start:]
+        head_slots = max_blocks - len(tail)
+        if head_slots <= 0:
+            return tail[-max_blocks:]
+        return compact[:head_slots] + tail
+
+    @staticmethod
+    def _normalize_question_type(raw_type: Any) -> str:
+        q_type = str(raw_type or 'multiple_choice').strip().lower()
+        if q_type in ('multiple_choice', 'mcq', 'multiple-choice', 'multiple choice', 'trac_nghiem'):
+            return 'multiple_choice'
+        if q_type in ('true_false', 'true-false', 'true false', 'dung_sai', 'đúng_sai'):
+            return 'true_false'
+        if q_type in ('short_answer', 'short-answer', 'short answer', 'tu_luan_ngan'):
+            return 'short_answer'
+        return 'multiple_choice'
+
+    @staticmethod
+    def _coerce_options(options_raw: Any) -> List[Dict[str, Any]]:
+        if isinstance(options_raw, dict):
+            ordered_keys = [k for k in ('A', 'B', 'C', 'D', 'a', 'b', 'c', 'd') if k in options_raw]
+            if not ordered_keys:
+                ordered_keys = list(options_raw.keys())
+            items = []
+            for key in ordered_keys:
+                value = options_raw.get(key)
+                if isinstance(value, dict):
+                    item = dict(value)
+                    item.setdefault('text', str(value.get('text') or ''))
+                else:
+                    item = {'text': str(value or '')}
+                item['_label'] = str(key)
+                items.append(item)
+            return items
+
+        if isinstance(options_raw, list):
+            items = []
+            for opt in options_raw:
+                if isinstance(opt, dict):
+                    items.append(opt)
+                elif isinstance(opt, str):
+                    items.append({'text': opt})
+            return items
+
+        return []
 
     @staticmethod
     def _normalize_questions(raw_questions: List[Dict]) -> List[Dict]:
@@ -352,19 +590,31 @@ class AIGeneratorService:
         để frontend và bulk-save logic xử lý được.
         """
         normalized = []
-        for q in raw_questions:
+        skipped = 0
+        for idx, q in enumerate(raw_questions):
             if not isinstance(q, dict):
+                print(f"[normalize] Skipped item {idx}: not a dict (type={type(q)})")
+                skipped += 1
                 continue
 
-            q_type = q.get('question_type', 'multiple_choice')
-            if q_type not in ('multiple_choice', 'true_false', 'short_answer'):
-                q_type = 'multiple_choice'
+            # Trường hợp item là content block đơn lẻ (không phải question object).
+            if AIGeneratorService._is_content_block(q):
+                q = AIGeneratorService._to_question_from_blocks([q])
 
-            content_json = q.get('content_json', [])
+            q_type = AIGeneratorService._normalize_question_type(q.get('question_type') or q.get('type'))
+
+            content_json = q.get('content_json', q.get('content', []))
             if not isinstance(content_json, list):
                 content_json = []
 
-            q_text = (q.get('text') or '').strip()
+            q_text = (
+                q.get('text')
+                or q.get('stem')
+                or q.get('question')
+                or q.get('prompt')
+                or ''
+            )
+            q_text = str(q_text).strip()
             if not q_text:
                 q_text = AIGeneratorService._blocks_to_text(content_json)
 
@@ -378,14 +628,21 @@ class AIGeneratorService:
                 'image': q.get('image', ''),
                 'difficulty': q.get('difficulty', 'medium'),
                 'context': q.get('context', ''),
-                'correct_answer_text': q.get('correct_answer_text', ''),
+                'correct_answer_text': (
+                    q.get('correct_answer_text')
+                    or q.get('answer')
+                    or q.get('result')
+                    or ''
+                ),
                 'options': [],
             }
 
             if q_type in ('multiple_choice', 'true_false'):
-                for opt in q.get('options', []):
-                    if not isinstance(opt, dict):
-                        continue
+                raw_opts = AIGeneratorService._coerce_options(
+                    q.get('options', q.get('choices', q.get('answers', [])))
+                )
+
+                for opt in raw_opts:
                     opt_content = opt.get('content_json', [])
                     if not isinstance(opt_content, list):
                         opt_content = []
@@ -401,13 +658,40 @@ class AIGeneratorService:
                         'content_json': opt_content,
                         'text': opt_text,
                         'is_correct': bool(opt.get('is_correct', False)),
+                        '_label': opt.get('_label'),
                     })
+
+                # Suy diễn đáp án đúng nếu model trả về dạng key riêng.
+                q_correct = q.get('correct_option') or q.get('answer_key') or q.get('correct_answer')
+                has_correct = any(bool(o.get('is_correct')) for o in item['options'])
+                if q_correct and item['options'] and not has_correct:
+                    key = str(q_correct).strip()
+                    idx_from_key = None
+                    if len(key) == 1 and key.upper() in ('A', 'B', 'C', 'D'):
+                        idx_from_key = ord(key.upper()) - ord('A')
+                    elif key.isdigit():
+                        n = int(key)
+                        if 1 <= n <= len(item['options']):
+                            idx_from_key = n - 1
+
+                    if idx_from_key is not None and 0 <= idx_from_key < len(item['options']):
+                        item['options'][idx_from_key]['is_correct'] = True
+
+                # Làm sạch field nội bộ không dùng downstream.
+                for o in item['options']:
+                    if '_label' in o:
+                        o.pop('_label', None)
 
             # Bỏ qua câu không có stem text và cũng không có ảnh trong stem.
             if not item['text'] and not AIGeneratorService._has_image_block(item['content_json']):
+                print(f"[normalize] Skipped item {idx}: no text stem and no image block. Keys in raw: {list(q.keys())}")
+                skipped += 1
                 continue
 
             normalized.append(item)
+
+        if skipped:
+            print(f"[normalize] Total skipped: {skipped}/{len(raw_questions)}")
         return normalized
 
     # ─── 1. Trích xuất từ file (PDF, Docx, Ảnh) ──────────────────────────
@@ -421,63 +705,163 @@ class AIGeneratorService:
             raise ValueError("GEMINI_API_KEY is not configured.")
 
         print(f"--- STARTING AI EXTRACTION FROM FILE: {file_path} ---")
-        model = genai.GenerativeModel(model_name)
         ext = os.path.splitext(file_path)[1].lower()
 
         try:
+            t0 = time.perf_counter()
             if ext == '.docx':
-                response = cls._extract_docx(file_path, model)
+                response = cls._extract_docx(file_path)
             else:
-                response = cls._extract_generic(file_path, model)
+                response = cls._extract_generic(file_path)
+            t_extract = time.perf_counter()
 
-            print(f"Gemini response received. Parsing...")
-            questions = cls._parse_gemini_json(response.text)
+            print(f"Gemini response received (model={model_name}). Parsing...")
+            raw_text = response.text
+            questions = cls._parse_gemini_json(raw_text)
+            t_parse = time.perf_counter()
             if not questions:
+                print(f"[extract_from_file] AI raw response (first 2000 chars):\n{raw_text[:2000]}")
                 raise ValueError(
                     "AI trả về dữ liệu không đúng JSON array câu hỏi. "
                     "Vui lòng thử lại với tài liệu nhỏ hơn hoặc kiểm tra prompt/model."
                 )
+
+            # Fallback cho trường hợp model trả về list content blocks thay vì list question objects.
+            if cls._looks_like_content_blocks_list(questions):
+                print("[extract_from_file] Detected content block list from AI. Applying block fallback conversion.")
+                questions = cls._fallback_questions_from_blocks(questions)
+
             normalized = cls._normalize_questions(questions)
+            t_normalize = time.perf_counter()
+
+            # Nếu model trả về 1 blob lớn nhưng có nhiều marker câu hỏi, tách heuristic để tăng recall.
+            if len(normalized) == 1:
+                only = normalized[0]
+                if only.get('question_type') == 'short_answer' and not only.get('options'):
+                    marker_count = cls._count_question_markers(str(only.get('text') or ''))
+                    if marker_count >= 2:
+                        split_qs = cls._split_text_to_short_answer_questions(str(only.get('text') or ''))
+                        if split_qs:
+                            normalized = cls._normalize_questions(split_qs)
+                            print(f"[extract_from_file] Heuristic split activated: {len(normalized)} questions (markers={marker_count}).")
+
             if not normalized:
+                print(f"[extract_from_file] normalize returned 0 from {len(questions)} parsed questions.")
+                print(f"[extract_from_file] First raw question sample: {questions[0] if questions else 'N/A'}")
                 raise ValueError(
                     "AI đã phản hồi nhưng không trích xuất được câu hỏi hợp lệ "
                     "(có thể thiếu nội dung stem hoặc format không đúng)."
                 )
+            print(
+                "[extract_from_file][timing] "
+                f"model_io={t_extract - t0:.2f}s, "
+                f"parse={t_parse - t_extract:.2f}s, "
+                f"normalize={t_normalize - t_parse:.2f}s, "
+                f"total={t_normalize - t0:.2f}s"
+            )
             print(f"Extracted {len(normalized)} questions successfully.")
             return normalized
         except Exception as e:
-            print(f"ERROR matching extraction: {str(e)}")
+            print(f"ERROR in extract_from_file: {str(e)}")
             raise e
 
     @classmethod
-    def _extract_docx(cls, file_path: str, model):
-        """Sử dụng DocxNativeParser quét text/hình ảnh inline -> json array blocks đưa LLM."""
+    def _extract_docx(cls, file_path: str):
+        """
+        Trích xuất câu hỏi từ DOCX.
+        - File nhỏ (<= SINGLE_SHOT_THRESHOLD blocks): 1 lần gọi Gemini.
+        - File lớn: chia chunks -> gọi nhiều lần -> trả về FakeResponse gộp.
+        """
         from .docx_parser import DocxNativeParser
-        
+
         print(f"Extracting Blocks from DOCX: {file_path}")
         try:
             content_blocks = DocxNativeParser.parse_docx(file_path)
             print(f"Parsed {len(content_blocks)} content blocks from DOCX.")
-            
-            # Gửi nội dung dạng chuỗi JSON thô (bao gồm SHA-256 placeholder) để LLM đọc và sắp xếp
+
             compact_blocks = cls._compact_blocks_for_prompt(content_blocks)
-            blocks_json_str = json.dumps(compact_blocks, ensure_ascii=False)
-            
-            content_parts = [EXTRACTION_PROMPT]
-            
-            # Giải thích cho Prompt
-            content_parts.append(
-                f"MÃ NGUỒN DOCX DƯỚI DẠNG CONTENT BLOCKS (Hãy phân bổ chính xác các block có type='image' với id SHA-256 vào câu hỏi mà nó kèm theo!):\n{blocks_json_str}"
-            )
-            
-            return model.generate_content(content_parts)
-            
+            print(f"Compacted to {len(compact_blocks)} blocks (removed url fields).")
+
+            if len(compact_blocks) <= SINGLE_SHOT_THRESHOLD:
+                # --- Single-shot path ---
+                blocks_json_str = json.dumps(compact_blocks, ensure_ascii=False)
+                content_parts = [EXTRACTION_PROMPT]
+                content_parts.append(
+                    f"MÃ NGUỒN DOCX DƯỚI DẠNG CONTENT BLOCKS:\n{blocks_json_str}"
+                )
+                return gemini_client.generate_content(
+                    content_parts,
+                    model=model_name,
+                    config=GENERATION_CONFIG_JSON_STRICT,
+                )
+            else:
+                # --- Chunked path ---
+                return cls._extract_docx_chunked(compact_blocks)
+
         except Exception as e:
-            print(f"DOCX Native parser failed, error: {e}")
+            print(f"DOCX extraction failed: {e}")
             raise ValueError(f"Lỗi xử lý file DOCX: {e}")
 
     @classmethod
-    def _extract_generic(cls, file_path: str, model):
+    def _extract_docx_chunked(cls, compact_blocks: List[Dict[str, Any]]):
+        """
+        Gọi Gemini nhiều lần, mỗi lần với CHUNK_BLOCK_SIZE blocks.
+        Gộp tất cả câu hỏi lại và trả về FakeResponse.
+        """
+        total = len(compact_blocks)
+        chunks = [
+            compact_blocks[i: i + CHUNK_BLOCK_SIZE]
+            for i in range(0, total, CHUNK_BLOCK_SIZE)
+        ]
+        n_chunks = len(chunks)
+        print(f"[chunked] Splitting {total} blocks into {n_chunks} chunks of ~{CHUNK_BLOCK_SIZE} blocks each.")
+
+        all_questions_raw = []
+
+        for idx, chunk in enumerate(chunks):
+            chunk_num = idx + 1
+            print(f"[chunked] Processing chunk {chunk_num}/{n_chunks} ({len(chunk)} blocks)...")
+            t_chunk_start = time.perf_counter()
+
+            blocks_json_str = json.dumps(chunk, ensure_ascii=False)
+            prompt_chunk = (
+                f"Đây là PHẦN {chunk_num}/{n_chunks} của tài liệu DOCX.\n"
+                f"YÊU CẦU BẮT BUỘC: Trích xuất TẤT CẢ câu hỏi trong phần này. "
+                f"Nếu phần này không chứa câu hỏi hoàn chỉnh, trả về mảng rỗng [].\n\n"
+                f"MÃ NGUỒN CONTENT BLOCKS (PHẦN {chunk_num}/{n_chunks}):\n{blocks_json_str}"
+            )
+            content_parts = [EXTRACTION_PROMPT, prompt_chunk]
+
+            try:
+                response = gemini_client.generate_content(
+                    content_parts,
+                    model=model_name,
+                    config=GENERATION_CONFIG_JSON_STRICT,
+                )
+                chunk_questions = cls._parse_gemini_json(response.text)
+                t_chunk_end = time.perf_counter()
+                print(
+                    f"[chunked] Chunk {chunk_num}/{n_chunks}: "
+                    f"{len(chunk_questions)} questions in {t_chunk_end - t_chunk_start:.1f}s"
+                )
+                all_questions_raw.extend(chunk_questions)
+            except Exception as e:
+                print(f"[chunked] Chunk {chunk_num}/{n_chunks} FAILED: {e}. Skipping.")
+                continue
+
+        print(f"[chunked] Total raw questions collected: {len(all_questions_raw)}")
+
+        # Trả về object giả có .text chứa JSON gộp để compatible với caller
+        class _FakeResponse:
+            def __init__(self, questions):
+                self.text = json.dumps(questions, ensure_ascii=False)
+
+        return _FakeResponse(all_questions_raw)
+
+
+
+    @classmethod
+    def _extract_generic(cls, file_path: str):
         """Xử lý PDF bằng PyMuPDF (Render thành ảnh), hoặc ảnh thông thường."""
         ext = os.path.splitext(file_path)[1].lower()
         uploaded_images = []
@@ -508,7 +892,7 @@ class AIGeneratorService:
                 doc.close()
                 
                 for path in image_tmp_paths:
-                    uploaded = genai.upload_file(path=path)
+                    uploaded = gemini_client.upload_file(path=path)
                     uploaded_images.append(uploaded)
                     
                 content_parts = [EXTRACTION_PROMPT_GENERIC]
@@ -516,19 +900,27 @@ class AIGeneratorService:
                                      f"VUI LÒNG ĐỌC VÀ BÓC TÁCH CÂU HỎI:")
                 content_parts.extend(uploaded_images)
                 
-                return model.generate_content(content_parts)
+                return gemini_client.generate_content(
+                    content_parts,
+                    model=model_name,
+                    config=GENERATION_CONFIG_JSON_STRICT,
+                )
 
             else:
                 # Ảnh đơn (.png, .jpg...)
                 print(f"Uploading generic image {file_path} to Gemini File API...")
-                uploaded_file = genai.upload_file(path=file_path)
+                uploaded_file = gemini_client.upload_file(path=file_path)
                 uploaded_images.append(uploaded_file)
-                return model.generate_content([uploaded_file, EXTRACTION_PROMPT_GENERIC])
+                return gemini_client.generate_content(
+                    [uploaded_file, EXTRACTION_PROMPT_GENERIC],
+                    model=model_name,
+                    config=GENERATION_CONFIG_JSON_STRICT,
+                )
                 
         finally:
             for uploaded_obj in uploaded_images:
                 try:
-                    genai.delete_file(uploaded_obj.name)
+                    gemini_client.delete_file(uploaded_obj.name)
                     print(f"Deleted file {uploaded_obj.name} from Gemini.")
                 except Exception as e:
                     pass
@@ -556,13 +948,11 @@ class AIGeneratorService:
         from pgvector.django import L2Distance
 
         # Bước 1: Embedding câu topic
-        embed_result = genai.embed_content(
-            model="models/gemini-embedding-001",
+        query_embedding = gemini_client.embed_content(
             content=topic,
-            task_type="retrieval_query",
+            task_type="RETRIEVAL_QUERY",
             output_dimensionality=768,
         )
-        query_embedding = embed_result['embedding']
 
         # Bước 2: Tìm 10 chunks gần nhất thuộc lớp này
         closest_chunks = (
@@ -593,8 +983,7 @@ class AIGeneratorService:
             context=context_text,
         )
 
-        model = genai.GenerativeModel(model_name)
-        response = model.generate_content(prompt)
+        response = gemini_client.generate_content(prompt, model=model_name, config=GENERATION_CONFIG_RAG)
 
         questions = cls._parse_gemini_json(response.text)
         return cls._normalize_questions(questions)
