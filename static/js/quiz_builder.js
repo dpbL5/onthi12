@@ -1037,13 +1037,38 @@ function bindAiGeneratorEvents() {
             aiParsingInProgress = true;
 
             try {
-                const formData = new FormData();
-                formData.append('file', file);
+                // Upload trực tiếp sang Cloudinary trước
+                const cloudName = 'dvwkjiz2i';
+                const uploadPreset = 'nvh_upload';
+                
+                const cloudFormData = new FormData();
+                cloudFormData.append('file', file);
+                cloudFormData.append('upload_preset', uploadPreset);
+                
+                if (errBox) errBox.innerHTML = '<span class="text-info">Đang tải lên mây trung gian...</span>';
+                
+                const cloudRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
+                    method: 'POST',
+                    body: cloudFormData
+                });
+                
+                if (!cloudRes.ok) {
+                    const cloudErr = await cloudRes.json();
+                    throw new Error(cloudErr.error?.message || 'Có lỗi khi upload file.');
+                }
+                
+                const cloudData = await cloudRes.json();
+                const fileUrl = cloudData.secure_url;
+                
+                if (errBox) errBox.innerHTML = '<span class="text-success">Tải lên hoàn tất. AI đang phân tích tài liệu...</span>';
 
                 const res = await fetch('/api/ai/generate/extract-file/', {
                     method: 'POST',
-                    headers: { Authorization: 'Bearer ' + localStorage.getItem('access') },
-                    body: formData,
+                    headers: { 
+                        'Authorization': 'Bearer ' + localStorage.getItem('access'),
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ file_url: fileUrl, file_name: file.name }),
                 });
 
                 const data = await res.json();
@@ -1052,11 +1077,12 @@ function bindAiGeneratorEvents() {
                     return;
                 }
 
+                if (errBox) errBox.innerHTML = '';
                 currentDrafts.file = Array.isArray(data.questions) ? data.questions : [];
                 renderDraftBoard('file');
                 if (saveBtn && currentDrafts.file.length) saveBtn.style.display = 'inline-block';
             } catch (err) {
-                if (errBox) errBox.textContent = 'Lỗi kết nối tới AI Service.';
+                if (errBox) errBox.textContent = err.message || 'Lỗi kết nối tới AI Service.';
             } finally {
                 aiParsingInProgress = false;
                 if (btn) btn.disabled = false;

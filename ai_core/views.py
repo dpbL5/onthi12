@@ -18,7 +18,7 @@ from pgvector.django import L2Distance
 from .models import DocumentChunk, Document, ClassInsight
 from classes.models import Class
 from .serializers import DocumentSerializer
-from rest_framework.parsers import MultiPartParser
+from rest_framework.parsers import MultiPartParser, JSONParser
 from rest_framework import permissions
 from exams.models import Question, Option, Quiz, QuizQuestion
 from exams.views import IsTeacherOrAdmin
@@ -489,30 +489,49 @@ class DeleteClassDocumentView(APIView):
 # ─── AI QUESTION GENERATOR VIEWS ────────────────────────────────────────────
 
 class AIExtractFromFileView(APIView):
-    """Nhận file upload, trích xuất câu hỏi qua AI (3 dạng THPT 2025)."""
+    """Nhận file upload hoặc URL, trích xuất câu hỏi qua AI."""
     permission_classes = [IsAuthenticated, IsTeacherOrAdmin]
-    parser_classes = [MultiPartParser]
+    parser_classes = [MultiPartParser, JSONParser]
 
     def post(self, request):
         file_obj = request.FILES.get('file')
-        if not file_obj:
-            return Response({"error": "No file provided."}, status=status.HTTP_400_BAD_REQUEST)
+        file_url = request.data.get('file_url')
+        file_name = request.data.get('file_name', 'downloaded_file.docx')
+
+        if not file_obj and not file_url:
+            return Response({"error": "No file or file_url provided."}, status=status.HTTP_400_BAD_REQUEST)
 
         import tempfile
         import os
         import traceback as tb
+        import requests
+        import mimetypes
 
         tmp_file_path = None
         try:
-            ext = os.path.splitext(file_obj.name)[1]
-            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
-                for chunk in file_obj.chunks():
-                    tmp_file.write(chunk)
-                tmp_file_path = tmp_file.name
+            if file_obj:
+                ext = os.path.splitext(file_obj.name)[1]
+                with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
+                    for chunk in file_obj.chunks():
+                        tmp_file.write(chunk)
+                    tmp_file_path = tmp_file.name
+                mime_type = file_obj.content_type
+            else:
+                # Download from Cloudinary URL into /tmp
+                ext = os.path.splitext(file_name)[1]
+                with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
+                    resp = requests.get(file_url, stream=True)
+                    resp.raise_for_status()
+                    for chunk in resp.iter_content(chunk_size=8192):
+                        tmp_file.write(chunk)
+                    tmp_file_path = tmp_file.name
+                mime_type, _ = mimetypes.guess_type(file_name)
+                if not mime_type:
+                    mime_type = 'application/octet-stream'
 
             questions_data = AIGeneratorService.extract_from_file(
                 file_path=tmp_file_path,
-                mime_type=file_obj.content_type,
+                mime_type=mime_type,
             )
             return Response({"questions": questions_data})
 

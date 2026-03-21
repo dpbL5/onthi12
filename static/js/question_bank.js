@@ -1165,17 +1165,43 @@ document.getElementById('aiExtractForm').addEventListener('submit', async functi
     aiParsingInProgress = true;
 
     try {
-        const formData = new FormData();
-        formData.append('file', file);
+        // Bắt đầu Upload sang Cloudinary trực tiếp
+        const cloudName = 'dvwkjiz2i';
+        const uploadPreset = 'nvh_upload';
+        
+        const cloudFormData = new FormData();
+        cloudFormData.append('file', file);
+        cloudFormData.append('upload_preset', uploadPreset);
+        
+        errBox.innerHTML = '<span class="text-info">Đang tải tài liệu lên Cloud Storage trung gian...</span>';
+        
+        const cloudRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
+            method: 'POST',
+            body: cloudFormData
+        });
+        
+        if (!cloudRes.ok) {
+            const cloudErr = await cloudRes.json();
+            throw new Error(cloudErr.error?.message || 'Có lỗi khi upload file.');
+        }
+        
+        const cloudData = await cloudRes.json();
+        const fileUrl = cloudData.secure_url;
+        
+        errBox.innerHTML = '<span class="text-success">Tải xong. AI đang xử lý trích xuất câu hỏi...</span>';
+
+        // Gửi URL tài liệu lên Vercel Backend thay thế cho file
+        const payload = { file_url: fileUrl, file_name: file.name };
 
         const res = await fetch('/api/ai/generate/extract-file/', {
             method: 'POST',
-            headers: authOnlyHeaders(),
-            body: formData
+            headers: authHeaders(),
+            body: JSON.stringify(payload)
         });
 
         const data = await res.json();
         if (res.ok) {
+            errBox.innerHTML = '';
             currentDrafts.file = data.questions;
             renderDraftBoard('file');
             if (currentDrafts.file.length > 0) saveBtn.style.display = 'inline-block';
@@ -1183,7 +1209,7 @@ document.getElementById('aiExtractForm').addEventListener('submit', async functi
             errBox.textContent = data.error || 'Lỗi trích xuất từ server.';
         }
     } catch (err) {
-        errBox.textContent = 'Lỗi kết nối tới AI Service.';
+        errBox.textContent = err.message || 'Lỗi kết nối tới AI Service.';
     } finally {
         aiParsingInProgress = false;
         btn.disabled = false;
