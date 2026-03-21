@@ -185,9 +185,9 @@ const TYPE_LBL = {
 };
 
 const DIFF_LBL = {
-    easy: '<span class="badge bg-success">Dễ</span>',
-    medium: '<span class="badge bg-warning text-dark">Vừa</span>',
-    hard: '<span class="badge bg-danger">Khó</span>'
+    easy: '<span class="badge bg-success">Nhận biết</span>',
+    medium: '<span class="badge bg-warning text-dark">Thông hiểu</span>',
+    hard: '<span class="badge bg-danger">Vận dụng</span>'
 };
 
 function renderQuestions() {

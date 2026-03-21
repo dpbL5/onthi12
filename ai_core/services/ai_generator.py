@@ -30,26 +30,25 @@ GENERATION_CONFIG_RAG = {
     'max_output_tokens': 8192,
 }
 
-# Số blocks tối đa mỗi chunk khi gọi Gemini
-CHUNK_BLOCK_SIZE = 450
-# Nếu tất cả compact blocks <= ngưỡng này, gọp 1 lần gọi duy nhất
-SINGLE_SHOT_THRESHOLD = 500
+# max blocks for full document extraction
+MAX_BLOCKS_EXTRACTION = 8000
 RAG_MAX_CONTEXT_CHARS = int(os.environ.get('AI_RAG_MAX_CONTEXT_CHARS', '5000'))
 RAG_MAX_CHUNK_CHARS = int(os.environ.get('AI_RAG_MAX_CHUNK_CHARS', '650'))
 RAG_CACHE_TTL_SECONDS = int(os.environ.get('AI_RAG_CACHE_TTL_SECONDS', '300'))
 
 # ─── Prompt: Trích xuất câu hỏi đa dạng từ tài liệu ────────────────────────
 EXTRACTION_PROMPT = """
-Bạn là hệ thống trích xuất dữ liệu bài tập (Data Extractor) cho nền tảng giáo dục. Đề thi theo định dạng THPT 2025.
-Nhiệm vụ: đọc nội dung tài liệu (dạng chuỗi content_blocks) và bóc tách ra toàn bộ CÂU HỎI.
+Bạn là hệ thống trích xuất chuyên gia (Expert Data Extractor). Đề thi theo định dạng THPT 2025.
+Nhiệm vụ: đọc nội dung tài liệu (dạng chuỗi content_blocks) và bóc tách TOÀN BỘ CÂU HỎI có trong đó một cách CHÍNH XÁC NHẤT.
 
 YÊU CẦU BẮT BUỘC:
-1. Phải trích xuất TẤT CẢ câu hỏi có trong tài liệu, không được dừng ở câu đầu tiên.
-2. Về hình ảnh:
-   - CHỈ GIỮ LẠI các hình ảnh có ý nghĩa minh họa trực tiếp cho câu hỏi (ví dụ: đồ thị, bản đồ, hình học, sơ đồ thí nghiệm).
-   - BẮT BUỘC LOẠI BỎ: ảnh trang trí, logo, watermark, nút bấm, ô vuông báo điểm, viền khung, hoặc bất kỳ hình nào không phải nội dung học tập.
-   - Khi giữ lại hình ảnh, hãy đặt nguyên block `{"type": "image", "sha256": "..."}` vào trong mảng `content_json` (của câu hỏi hoặc phương án) đúng tại vị trí nó xuất hiện so với văn bản.
-3. Về đáp án: Dựa vào "Định dạng trực tiếp" (văn bản được highlight, gạch chân, đổi màu, in đậm không phải tiêu đề) hoặc "Bảng đáp án" phần cuối đề để xác định câu đúng.
+1. Trích xuất TẤT CẢ câu hỏi có trong tài liệu từ đầu đến câu cuối cùng (thường từ 40-50 câu). Tuyệt đối KHÔNG ĐƯỢC BỎ SÓT hay viết tắt.
+2. Giữ nguyên 100% văn bản gốc của câu hỏi và đáp án, không tự ý tóm tắt câu chữ.
+3. Về hình ảnh:
+   - CHỈ GIỮ LẠI các hình ảnh có ý nghĩa minh họa trực tiếp cho câu hỏi (đồ thị, bản đồ, hình học, sơ đồ thí nghiệm).
+   - LOẠI BỎ: ảnh trang trí, logo, watermark, ô vuông báo điểm, viền khung...
+   - Đặt block `{"type": "image", "sha256": "..."}` đúng vị trí ban đầu.
+4. Về đáp án: Dựa vào "Định dạng trực tiếp" trong văn bản (chữ highlight, gạch chân, in đậm khác thường) hoặc "Bảng đáp án" cuối đề để tìm câu đúng.
 
 PHÂN LOẠI 3 DẠNG CÂU HỎI (THPT 2025):
 
@@ -67,7 +66,7 @@ OUTPUT FORMAT BẮT BUỘC (Trả về duy nhất JSON array, không kèm text/g
 [
   {
     "question_type": "multiple_choice",
-    "difficulty": "medium",
+    "difficulty": "medium", // 'easy'=Nhận biết, 'medium'=Thông hiểu, 'hard'=Vận dụng
     "content_json": [
        {"type": "text", "value": "Nội dung câu "},
        {"type": "image", "sha256": "a3f9c...", "width_pt": 78, "height_pt": 18.5},
@@ -79,7 +78,7 @@ OUTPUT FORMAT BẮT BUỘC (Trả về duy nhất JSON array, không kèm text/g
   },
   {
     "question_type": "true_false",
-    "difficulty": "hard",
+    "difficulty": "hard", // 'hard'=Vận dụng
     "context": "Ngữ cảnh thí nghiệm...",
     "content_json": [ {"type": "text", "value": "Xét các phát biểu:"} ],
     "options": [
@@ -88,7 +87,7 @@ OUTPUT FORMAT BẮT BUỘC (Trả về duy nhất JSON array, không kèm text/g
   },
   {
     "question_type": "short_answer",
-    "difficulty": "hard",
+    "difficulty": "hard", // 'hard'=Vận dụng
     "content_json": [ {"type": "text", "value": "Tính giá trị... "} ],
     "correct_answer_text": "42"
   }
@@ -162,7 +161,7 @@ Nhiệm vụ: Dựa vào TÀI LIỆU TRÍCH XUẤT được cung cấp, tạo ra
 YÊU CẦU:
 - Chủ đề / phạm vi: {topic}
 - Số lượng câu hỏi: {count}
-- Độ khó: {difficulty} (dễ/trung bình/khó)
+- Độ khó: {difficulty} (Nhận biết/Thông hiểu/Vận dụng)
 - Dạng câu hỏi cần tạo: {question_types}
 
 QUY TẮC CỐT LÕI (BẮT BUỘC):
@@ -786,9 +785,7 @@ class AIGeneratorService:
     @classmethod
     def _extract_docx(cls, file_path: str):
         """
-        Trích xuất câu hỏi từ DOCX.
-        - File nhỏ (<= SINGLE_SHOT_THRESHOLD blocks): 1 lần gọi Gemini.
-        - File lớn: chia chunks -> gọi nhiều lần -> trả về FakeResponse gộp.
+        Trích xuất câu hỏi từ DOCX bằng 1 request duy nhất (Single-shot) để tiết kiệm token và có context tốt.
         """
         from .docx_parser import DocxNativeParser
 
@@ -797,98 +794,24 @@ class AIGeneratorService:
             content_blocks = DocxNativeParser.parse_docx(file_path)
             print(f"Parsed {len(content_blocks)} content blocks from DOCX.")
 
-            compact_blocks = cls._compact_blocks_for_prompt(content_blocks)
+            compact_blocks = cls._compact_blocks_for_prompt(content_blocks, max_blocks=MAX_BLOCKS_EXTRACTION)
             print(f"Compacted to {len(compact_blocks)} blocks (removed url fields).")
 
-            if len(compact_blocks) <= SINGLE_SHOT_THRESHOLD:
-                # --- Single-shot path ---
-                blocks_json_str = json.dumps(compact_blocks, ensure_ascii=False)
-                content_parts = [EXTRACTION_PROMPT]
-                content_parts.append(
-                    f"MÃ NGUỒN DOCX DƯỚI DẠNG CONTENT BLOCKS:\n{blocks_json_str}"
-                )
-                return gemini_client.generate_content(
-                    content_parts,
-                    model=FILE_EXTRACTION_MODEL,
-                    config=GENERATION_CONFIG_JSON_STRICT,
-                )
-            else:
-                # --- Chunked path ---
-                return cls._extract_docx_chunked(compact_blocks)
+            # --- Single-shot path ---
+            blocks_json_str = json.dumps(compact_blocks, ensure_ascii=False)
+            content_parts = [EXTRACTION_PROMPT]
+            content_parts.append(
+                f"MÃ NGUỒN DOCX DƯỚI DẠNG CONTENT BLOCKS:\n{blocks_json_str}"
+            )
+            return gemini_client.generate_content(
+                content_parts,
+                model=FILE_EXTRACTION_MODEL,
+                config=GENERATION_CONFIG_JSON_STRICT,
+            )
 
         except Exception as e:
             print(f"DOCX extraction failed: {e}")
             raise ValueError(f"Lỗi xử lý file DOCX: {e}")
-
-    @classmethod
-    def _extract_docx_chunked(cls, compact_blocks: List[Dict[str, Any]]):
-        """
-        Gọi Gemini nhiều lần song song (Concurrency), mỗi lần với CHUNK_BLOCK_SIZE blocks.
-        Gộp tất cả câu hỏi lại và trả về FakeResponse.
-        """
-        import concurrent.futures
-
-        total = len(compact_blocks)
-        chunks = [
-            compact_blocks[i: i + CHUNK_BLOCK_SIZE]
-            for i in range(0, total, CHUNK_BLOCK_SIZE)
-        ]
-        n_chunks = len(chunks)
-        print(f"[chunked] Splitting {total} blocks into {n_chunks} chunks of ~{CHUNK_BLOCK_SIZE} blocks each.")
-
-        all_questions_raw = []
-
-        def process_chunk(idx, chunk):
-            chunk_num = idx + 1
-            print(f"[chunked] Processing chunk {chunk_num}/{n_chunks} ({len(chunk)} blocks)...")
-            t_chunk_start = time.perf_counter()
-
-            blocks_json_str = json.dumps(chunk, ensure_ascii=False)
-            prompt_chunk = (
-                f"Đây là PHẦN {chunk_num}/{n_chunks} của tài liệu DOCX.\n"
-                f"YÊU CẦU BẮT BUỘC: Trích xuất TẤT CẢ câu hỏi trong phần này.\n"
-                f"Nếu phần này không chứa câu hỏi hoàn chỉnh, chỉ chứa đáp án thì cố gắng gom vào câu hỏi trước đó hoặc trả về mảng rỗng [].\n\n"
-                f"MÃ NGUỒN CONTENT BLOCKS (PHẦN {chunk_num}/{n_chunks}):\n{blocks_json_str}"
-            )
-            content_parts = [EXTRACTION_PROMPT, prompt_chunk]
-
-            try:
-                response = gemini_client.generate_content(
-                    content_parts,
-                    model=FILE_EXTRACTION_MODEL,
-                    config=GENERATION_CONFIG_JSON_STRICT,
-                )
-                chunk_questions = cls._parse_gemini_json(response.text)
-                t_chunk_end = time.perf_counter()
-                print(
-                    f"[chunked] Chunk {chunk_num}/{n_chunks}: "
-                    f"Found {len(chunk_questions)} questions in {t_chunk_end - t_chunk_start:.1f}s"
-                )
-                return chunk_questions
-            except Exception as e:
-                print(f"[chunked] Chunk {chunk_num}/{n_chunks} FAILED: {e}. Skipping.")
-                return []
-
-        # Chạy song song tối đa 5 threads để tránh Rate Limit (HTTP 429) của Gemini Free/Flash
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            future_to_chunk = {executor.submit(process_chunk, i, chunk): i for i, chunk in enumerate(chunks)}
-            # Thu thập kết quả theo thứ tự (giữ nguyên thứ tự câu hỏi trong đề)
-            results = [None] * n_chunks
-            for future in concurrent.futures.as_completed(future_to_chunk):
-                i = future_to_chunk[future]
-                results[i] = future.result()
-
-        for res in results:
-            if res:
-                all_questions_raw.extend(res)
-
-        print(f"[chunked] Total raw questions collected from all threads: {len(all_questions_raw)}")
-
-        class _FakeResponse:
-            def __init__(self, questions):
-                self.text = json.dumps(questions, ensure_ascii=False)
-
-        return _FakeResponse(all_questions_raw)
 
 
 

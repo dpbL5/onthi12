@@ -55,9 +55,9 @@ const Q_TYPE_CONFIG = {
 };
 
 const DIFF_CONFIG = {
-    easy: { label: 'Dễ', badge: 'bg-success' },
-    medium: { label: 'Vừa', badge: 'bg-warning text-dark' },
-    hard: { label: 'Khó', badge: 'bg-danger' },
+    easy: { label: 'Nhận biết', badge: 'bg-success' },
+    medium: { label: 'Thông hiểu', badge: 'bg-warning text-dark' },
+    hard: { label: 'Vận dụng', badge: 'bg-danger' },
 };
 
 function typeBadge(type) {

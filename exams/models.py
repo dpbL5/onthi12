@@ -34,9 +34,9 @@ class Question(models.Model):
         ('short_answer', 'Trả lời ngắn'),
     )
     DIFFICULTY_CHOICES = (
-        ('easy', 'Dễ'),
-        ('medium', 'Vừa'),
-        ('hard', 'Khó'),
+        ('easy', 'Nhận biết'),
+        ('medium', 'Thông hiểu'),
+        ('hard', 'Vận dụng'),
     )
 
     question_type = models.CharField(
