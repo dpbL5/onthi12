@@ -341,34 +341,36 @@ class AIGeneratorService:
     def _extract_first_json_array(text: str) -> str:
         """Trích xuất JSON array đầu tiên trong chuỗi bằng bracket matching."""
         start = text.find('[')
-        while start != -1:
-            depth = 0
-            in_string = False
-            escaped = False
+        if start == -1:
+            return ''
 
-            for i in range(start, len(text)):
-                ch = text[i]
-                if in_string:
-                    if escaped:
-                        escaped = False
-                    elif ch == '\\':
-                        escaped = True
-                    elif ch == '"':
-                        in_string = False
-                    continue
+        depth = 0
+        in_string = False
+        escaped = False
 
-                if ch == '"':
-                    in_string = True
-                elif ch == '[':
-                    depth += 1
-                elif ch == ']':
-                    depth -= 1
-                    if depth == 0:
-                        return text[start:i + 1]
+        for i in range(start, len(text)):
+            ch = text[i]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif ch == '\\':
+                    escaped = True
+                elif ch == '"':
+                    in_string = False
+                continue
 
-            start = text.find('[', start + 1)
+            if ch == '"':
+                in_string = True
+            elif ch == '[':
+                depth += 1
+            elif ch == ']':
+                depth -= 1
+                if depth == 0:
+                    return text[start:i + 1]
 
-        return ''
+        # Nếu chạy hết chuỗi mà depth > 0, mảng bị cắt (truncated).
+        # Trả về toàn bộ phần còn lại để có thể được sửa chữa bởi fallback.
+        return text[start:]
 
     @staticmethod
     def _blocks_to_text(blocks: Any) -> str:

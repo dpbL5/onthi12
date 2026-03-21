@@ -264,11 +264,12 @@ class DocxNativeParser:
             img_bytes = zf.read(zip_path)
             ext = os.path.splitext(zip_path)[1].lower()
 
-            if ext == '.wmf':
-                img_bytes = cls._convert_wmf_to_png(img_bytes)
-                if not img_bytes:
-                    print(f"  Skip WMF image (cannot convert): {zip_path}")
+            if ext in ['.wmf', '.emf']:
+                converted_bytes = cls._convert_metafile_to_png(img_bytes, ext)
+                if not converted_bytes:
+                    print(f"  Skip {ext.upper()} image (cannot convert on serverless): {zip_path}")
                     return None
+                img_bytes = converted_bytes
                 ext = '.png'
 
             sha256_hash = hashlib.sha256(img_bytes).hexdigest()
@@ -328,14 +329,14 @@ class DocxNativeParser:
             return None
 
     @staticmethod
-    def _convert_wmf_to_png(wmf_bytes: bytes) -> Optional[bytes]:
-        """Convert WMF -> PNG bằng ImageMagick hoặc LibreOffice."""
+    def _convert_metafile_to_png(meta_bytes: bytes, ext: str) -> Optional[bytes]:
+        """Convert WMF/EMF -> PNG bằng ImageMagick hoặc LibreOffice."""
         try:
             with tempfile.TemporaryDirectory() as tmp_dir:
-                in_path = os.path.join(tmp_dir, 'input.wmf')
+                in_path = os.path.join(tmp_dir, f'input{ext}')
                 out_path = os.path.join(tmp_dir, 'output.png')
                 with open(in_path, 'wb') as f:
-                    f.write(wmf_bytes)
+                    f.write(meta_bytes)
 
                 commands = []
                 if shutil.which('magick'):
