@@ -23,6 +23,11 @@ class ImageBankSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if not obj.image_file:
             return None
+        
+        # Nếu url đã lưu là direct URL (Cloudinary)
+        if obj.image_file.name.startswith('http'):
+            return obj.image_file.name
+
         url = obj.image_file.url
         if request:
             return request.build_absolute_uri(url)

@@ -44,7 +44,7 @@ class DocxNativeParser:
         Đọc file DOCX, trả về list các content_blocks (text + image).
         Metadata: bold, underline, highlight được gắn vào từng block text để AI nhận diện đáp án đúng.
         """
-        os.makedirs(IMAGE_BANK_DIR, exist_ok=True)
+        # os.makedirs(IMAGE_BANK_DIR, exist_ok=True)  # Disabled for Vercel Serverless
 
         with zipfile.ZipFile(docx_path, 'r') as zf:
             rels_map = cls._build_relationships_map(zf)
@@ -286,35 +286,41 @@ class DocxNativeParser:
                 }
             )
 
+            from ai_core.services.cloudinary_service import upload_to_cloudinary
+            needs_upload = False
+
             if created:
-                file_name = f"{sha256_hash}{ext}"
-                save_path = os.path.join(IMAGE_BANK_DIR, file_name)
-                with open(save_path, 'wb') as f:
-                    f.write(img_bytes)
-                img_bank.image_file.name = f"questions/images/bank/{file_name}"
-                img_bank.save()
+                needs_upload = True
             else:
-                updated = False
-                if not img_bank.image_file:
-                    file_name = f"{sha256_hash}{ext}"
-                    save_path = os.path.join(IMAGE_BANK_DIR, file_name)
-                    with open(save_path, 'wb') as f:
-                        f.write(img_bytes)
-                    img_bank.image_file.name = f"questions/images/bank/{file_name}"
-                    updated = True
-                if not img_bank.original_filename:
-                    img_bank.original_filename = base_name
-                    updated = True
-                if updated:
+                if not img_bank.image_file or not img_bank.image_file.name.startswith('http'):
+                    needs_upload = True
+
+            if needs_upload:
+                file_name = f"{sha256_hash}{ext}"
+                secure_url = upload_to_cloudinary(img_bytes, file_name)
+                if secure_url:
+                    img_bank.image_file.name = secure_url
                     img_bank.save()
+                else:
+                    print(f"  Cloudinary upload failed for {zip_path}")
+
+            if not created and not img_bank.original_filename:
+                img_bank.original_filename = base_name
+                img_bank.save()
 
             print(f"  Processed image: {zip_path} -> SHA256: {sha256_hash[:8]}...")
+            
+            # Since img_bank.image_file could be a direct URL or local path
+            url_to_return = ''
+            if img_bank.image_file:
+                url_to_return = img_bank.image_file.name if img_bank.image_file.name.startswith('http') else img_bank.image_file.url
+
             return {
                 'type': 'image',
                 'sha256': sha256_hash,
                 'width_pt': w_pt,
                 'height_pt': h_pt,
-                'url': img_bank.image_file.url if img_bank.image_file else ''
+                'url': url_to_return
             }
 
         except Exception as e:

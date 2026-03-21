@@ -246,23 +246,19 @@ class UploadImageView(APIView):
 
         import uuid, os
         from django.conf import settings
+        from ai_core.services.cloudinary_service import upload_to_cloudinary
         
         try:
             ext = os.path.splitext(file_obj.name)[1].lower()
             if ext not in ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']:
                 return Response({"error": "Unsupported image format."}, status=status.HTTP_400_BAD_REQUEST)
 
+            file_bytes = file_obj.read()
             file_name = f"editor_{uuid.uuid4().hex}{ext}"
-            save_dir = os.path.join(settings.MEDIA_ROOT, 'editor_uploads')
-            os.makedirs(save_dir, exist_ok=True)
-            save_path = os.path.join(save_dir, file_name)
-
-            with open(save_path, 'wb+') as destination:
-                for chunk in file_obj.chunks():
-                    destination.write(chunk)
-
-            # URL phục vụ ảnh qua đường dẫn MEDIA_URL
-            image_url = f"{settings.MEDIA_URL}editor_uploads/{file_name}"
+            
+            image_url = upload_to_cloudinary(file_bytes, file_name)
+            if not image_url:
+                return Response({"error": "Failed to upload to cloud storage"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
             # API response cho TinyMCE/QuillJs typically requires { "location": "url" } or similar
             # Markdown usually expects just an URL or similar JSON
@@ -315,7 +311,13 @@ class QuestionImageUploadView(APIView):
         )
 
         if created:
-            image_bank.image_file.save(relative_path, ContentFile(file_bytes), save=True)
+            from ai_core.services.cloudinary_service import upload_to_cloudinary
+            secure_url = upload_to_cloudinary(file_bytes, file_obj.name)
+            if secure_url:
+                image_bank.image_file.name = secure_url
+                image_bank.save()
+            else:
+                image_bank.image_file.save(relative_path, ContentFile(file_bytes), save=True)
 
         request_source_type = request.data.get('source_type', 'user_upload')
         source_type = request_source_type if request_source_type in {'ai_scan', 'user_upload', 'system'} else 'user_upload'

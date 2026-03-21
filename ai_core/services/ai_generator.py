@@ -910,9 +910,9 @@ class AIGeneratorService:
                     page = doc.load_page(page_num)
                     pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
                     
+                    import tempfile
                     file_name = f"pdf_page_{uuid.uuid4().hex}_{page_num+1}.jpg"
-                    save_dir = os.path.join(settings.MEDIA_ROOT, 'questions', 'images')
-                    os.makedirs(save_dir, exist_ok=True)
+                    save_dir = tempfile.gettempdir()
                     save_path = os.path.join(save_dir, file_name)
                     
                     pix.save(save_path)
