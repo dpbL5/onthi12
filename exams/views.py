@@ -85,8 +85,14 @@ class QuestionListCreateView(generics.ListCreateAPIView):
             
         return qs
 
-    def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        question = serializer.save(created_by=request.user)
+
+        headers = self.get_success_headers(serializer.data)
+        q = self.get_queryset().get(pk=question.pk)
+        return Response(QuestionSerializer(q, context={'request': request}).data, status=status.HTTP_201_CREATED, headers=headers)
 
 
 class QuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -109,116 +115,7 @@ class BulkDeleteQuestionsView(APIView):
         count, _ = Question.objects.filter(id__in=ids).delete()
         return Response({'message': f'Deleted {count} questions successfully'})
 
-class UpdateQuestionFullView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsTeacherOrAdmin]
 
-    def _blocks_to_text(self, blocks):
-        if not isinstance(blocks, list):
-            return ''
-        parts = []
-        for b in blocks:
-            if isinstance(b, dict) and b.get('type') == 'text' and isinstance(b.get('value'), str):
-                parts.append(b.get('value'))
-        return ' '.join(parts).strip()
-
-    def _has_image_block(self, blocks):
-        if not isinstance(blocks, list):
-            return False
-        return any(isinstance(b, dict) and b.get('type') == 'image' for b in blocks)
-
-    def _normalize_question_payload(self, payload):
-        content_json = payload.get('content_json')
-        if content_json is not None and not isinstance(content_json, list):
-            raise ValueError('content_json must be a list')
-
-        text = payload.get('text')
-        if text is not None:
-            text = (text or '').strip()
-
-        if content_json is not None and not text:
-            text = self._blocks_to_text(content_json)
-
-        if content_json is not None and not text and not self._has_image_block(content_json):
-            raise ValueError('Question content cannot be empty')
-
-        return {
-            'text': text,
-            'content_json': content_json,
-            'difficulty': payload.get('difficulty'),
-            'question_type': payload.get('question_type'),
-            'context': payload.get('context'),
-            'correct_answer_text': payload.get('correct_answer_text'),
-            'options': payload.get('options') if 'options' in payload else None,
-        }
-
-    def put(self, request, pk):
-        try:
-            q = Question.objects.get(pk=pk)
-        except Question.DoesNotExist:
-            return Response({'error': 'Question not found'}, status=status.HTTP_404_NOT_FOUND)
-
-        try:
-            normalized = self._normalize_question_payload(request.data)
-        except ValueError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-        options_data = normalized['options']
-        validated_options = None
-        if options_data is not None:
-            if not isinstance(options_data, list):
-                return Response({'error': 'options must be a list'}, status=status.HTTP_400_BAD_REQUEST)
-
-            validated_options = []
-            for opt in options_data:
-                opt_content = opt.get('content_json')
-                if opt_content is not None and not isinstance(opt_content, list):
-                    return Response({'error': 'option.content_json must be a list'}, status=status.HTTP_400_BAD_REQUEST)
-
-                opt_text = (opt.get('text') or '').strip()
-                if not opt_text and isinstance(opt_content, list):
-                    opt_text = self._blocks_to_text(opt_content)
-
-                validated_options.append({
-                    'text': opt_text,
-                    'content_json': opt_content,
-                    'is_correct': opt.get('is_correct', False),
-                })
-
-        with transaction.atomic():
-            if normalized['text'] is not None:
-                q.text = normalized['text']
-            if normalized['content_json'] is not None:
-                q.content_json = normalized['content_json']
-            if normalized['difficulty'] is not None:
-                q.difficulty = normalized['difficulty']
-            if normalized['question_type'] is not None:
-                q.question_type = normalized['question_type']
-            if normalized['context'] is not None:
-                q.context = normalized['context']
-            if normalized['correct_answer_text'] is not None:
-                q.correct_answer_text = normalized['correct_answer_text']
-
-
-
-            q.save()
-
-            if validated_options is not None:
-                q.options.all().delete()
-                for opt in validated_options:
-                    Option.objects.create(
-                        question=q,
-                        text=opt['text'],
-                        content_json=opt['content_json'],
-                        is_correct=opt.get('is_correct', False)
-                    )
-
-        q = (
-            Question.objects
-            .select_related('subject', 'created_by')
-            .prefetch_related('options', 'question_images__image', 'question_images__uploaded_by')
-            .get(pk=pk)
-        )
-        return Response(QuestionSerializer(q, context={'request': request}).data)
 
 
 class OptionListCreateView(generics.ListCreateAPIView):

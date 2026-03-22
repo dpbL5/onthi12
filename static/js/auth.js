@@ -83,12 +83,14 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('regBtnSpinner').classList.remove('d-none');
             document.getElementById('regBtn').disabled = true;
         
+            const roleEl = document.querySelector('input[name="role"]:checked');
             const payload = {
                 email: document.getElementById('reg_email').value,
                 username: document.getElementById('reg_username').value,
                 password: document.getElementById('reg_password').value,
                 first_name: document.getElementById('first_name').value,
                 last_name: document.getElementById('last_name').value,
+                role_name: roleEl ? roleEl.value : 'student',
             };
             try {
                 const res = await fetch('/api/accounts/register/', {

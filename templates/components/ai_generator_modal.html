@@ -31,8 +31,15 @@
                                 <h6 class="fw-bold mb-3">Tải lên tệp tài liệu</h6>
                                 <p class="small text-muted mb-3">Hỗ trợ PDF, DOCX, Ảnh (.png, .jpg). AI tự động nhận dạng 3 dạng câu hỏi THPT 2025.</p>
                                 <form id="aiExtractForm">
+                                    <div class="mb-3" id="aiExtractSubjectWrap">
+                                        <label class="form-label fw-bold small">Môn học lưu trữ</label>
+                                        <select class="form-select" id="aiExtractSubject" name="subject_id" required>
+                                            <!-- Dynamically populated via JS -->
+                                        </select>
+                                    </div>
                                     <div class="mb-3">
-                                        <input class="form-control" type="file" id="aiFileInput" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" required>
+                                        <label class="form-label fw-bold small">Tệp tài liệu</label>
+                                        <input class="form-control" type="file" id="aiFileInput" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" multiple required>
                                     </div>
                                     <button type="submit" class="btn btn-primary w-100" id="btnExtractAI">
                                         <i class="bi bi-magic me-1"></i>Bắt đầu Trích xuất
@@ -47,11 +54,19 @@
                             <div class="col-md-8">
                                 <div class="d-flex justify-content-between align-items-center mb-3">
                                     <h6 class="fw-bold mb-0">Kết quả Trích xuất (Dạng Nháp)</h6>
-                                    <div>
+                                    <div class="mt-3 d-flex justify-content-between align-items-center">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="saveToQuizFile" checked>
+                                            <label class="form-check-label small fw-semibold" for="saveToQuizFile">
+                                                <i class="bi bi-journal-plus me-1 text-primary"></i>Lưu vào đề thi này
+                                            </label>
+                                        </div>
+                                        <div>
                                         <button class="btn btn-sm btn-outline-secondary me-2" onclick="selectAllDrafts('file')">Chọn tất cả</button>
                                         <button class="btn btn-sm btn-success" id="btnSaveDraftsFile" onclick="saveSelectedDrafts('file')" style="display:none">
                                             <i class="bi bi-cloud-arrow-up me-1"></i>Lưu các câu đã chọn
                                         </button>
+                                        </div>
                                     </div>
                                 </div>
                                 <div id="aiDraftBoardFile" class="ai-draft-board p-3 bg-light rounded">
@@ -130,11 +145,19 @@
                             <div class="col-md-8">
                                 <div class="d-flex justify-content-between align-items-center mb-3">
                                     <h6 class="fw-bold mb-0">Kết quả Sinh Câu Hỏi (Dạng Nháp)</h6>
-                                    <div>
+                                    <div class="mt-3 d-flex justify-content-between align-items-center">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="saveToQuizRag" checked>
+                                            <label class="form-check-label small fw-semibold" for="saveToQuizRag">
+                                                <i class="bi bi-journal-plus me-1 text-success"></i>Lưu vào đề thi này
+                                            </label>
+                                        </div>
+                                        <div>
                                         <button class="btn btn-sm btn-outline-secondary me-2" onclick="selectAllDrafts('rag')">Chọn tất cả</button>
                                         <button class="btn btn-sm btn-success" id="btnSaveDraftsRag" onclick="saveSelectedDrafts('rag')" style="display:none">
                                             <i class="bi bi-cloud-arrow-up me-1"></i>Lưu các câu đã chọn
                                         </button>
+                                        </div>
                                     </div>
                                 </div>
                                 <div id="aiDraftBoardRag" class="ai-draft-board p-3 bg-light rounded">

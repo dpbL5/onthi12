@@ -105,10 +105,35 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
         role_name = request.data.get('role_name')
         if role_name:
             try:
-                role = Role.objects.get(name=role_name)
+                role, _ = Role.objects.get_or_create(name=role_name)
                 user = self.get_object()
+                old_role_name = getattr(user.role, 'name', None)
                 user.role = role
                 user.save()
+                
+                # Update profiles based on new role
+                import random, string
+                if role_name != old_role_name:
+                    if role_name == 'teacher':
+                        if hasattr(user, 'student_profile'):
+                            user.student_profile.delete()
+                        if not hasattr(user, 'teacher_profile'):
+                            from .models import TeacherProfile
+                            code = 'GV-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+                            TeacherProfile.objects.create(user=user, teacher_code=code)
+                    elif role_name == 'student':
+                        if hasattr(user, 'teacher_profile'):
+                            user.teacher_profile.delete()
+                        if not hasattr(user, 'student_profile'):
+                            from .models import StudentProfile
+                            code = 'HS-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+                            StudentProfile.objects.create(user=user, student_code=code)
+                    elif role_name == 'admin':
+                        if hasattr(user, 'student_profile'):
+                            user.student_profile.delete()
+                        if hasattr(user, 'teacher_profile'):
+                            user.teacher_profile.delete()
+
                 return Response(UserSerializer(user).data)
             except Role.DoesNotExist:
                 return Response({'detail': f'Role "{role_name}" không tồn tại.'}, status=status.HTTP_400_BAD_REQUEST)

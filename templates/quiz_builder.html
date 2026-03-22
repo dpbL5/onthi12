@@ -22,267 +22,584 @@
         <div class="row g-4">
             <!-- Left: Quiz Info & Selected Questions -->
             <div class="col-lg-8">
-                <!-- Quiz Info Header -->
-                <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:1.5rem;">
-                    <div style="height:4px;background:linear-gradient(90deg,var(--color-primary),var(--color-secondary));"></div>
-                    <div style="padding:1.25rem 1.5rem;" class="d-flex justify-content-between align-items-start gap-3">
-                        <div>
-                            <h2 id="quizTitle" style="font-size:1.3rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.35rem;"></h2>
-                            <p id="quizDesc" style="color:var(--color-muted);font-size:0.875rem;margin:0;"></p>
-                        <div class="d-flex gap-2" style="flex-shrink:0;">
-                            <button class="btn btn-outline-primary btn-sm" onclick="editQuizSettings()">
-                                <i class="bi bi-gear"></i> <span class="d-none d-sm-inline">Cài đặt</span>
-                            </button>
-                            <button class="btn btn-outline-danger btn-sm" onclick="promptDeleteQuiz()">
-                                <i class="bi bi-trash"></i> <span class="d-none d-sm-inline">Xoá đề</span>
-                            </button>
+                <!-- Premium Quiz Info Header -->
+                <div class="qb-header-card mb-4">
+                    <div class="qb-header-top-accent"></div>
+                    <div class="p-4">
+                        <div class="d-flex justify-content-between align-items-start gap-3 mb-4">
+                            <div>
+                                <h2 id="quizTitle" class="qb-title"></h2>
+                                <p id="quizDesc" class="qb-desc"></p>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button class="btn qb-btn-outline-primary" onclick="editQuizSettings()">
+                                    <i class="bi bi-gear-fill"></i> <span>Cài đặt</span>
+                                </button>
+                                <button class="btn qb-btn-outline-danger" onclick="promptDeleteQuiz()">
+                                    <i class="bi bi-trash3-fill"></i> <span>Xoá</span>
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                    <div style="padding:0.875rem 1.5rem;background:var(--color-bg);border-top:1px solid var(--color-border);display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center;">
-                        <span style="font-size:0.8rem;color:var(--color-muted);"><i class="bi bi-clock me-1" style="color:var(--color-warning);"></i>Thời gian: <strong id="quizDuration"></strong> phút</span>
-                        <span style="font-size:0.8rem;color:var(--color-muted);"><i class="bi bi-file-earmark-text me-1" style="color:var(--color-info);"></i>Số câu: <strong id="quizQuestionCount">0</strong></span>
-                        <span style="font-size:0.8rem;color:var(--color-muted);"><i class="bi bi-circle-fill me-1" style="color:var(--color-success);"></i>Trạng thái: <span id="quizStatus" class="badge">Nháp</span></span>
-                        <span style="font-size:0.8rem;color:var(--color-muted);margin-left:auto;" id="quizScheduleInfo"></span>
-
+                        
+                        <div class="qb-meta-container">
+                            <div class="qb-meta-item">
+                                <div class="qb-meta-icon bg-warning-light text-warning"><i class="bi bi-clock-history"></i></div>
+                                <div class="qb-meta-text">
+                                    <span class="label">Thời gian</span>
+                                    <span class="value"><strong id="quizDuration"></strong> phút</span>
+                                </div>
+                            </div>
+                            <div class="qb-meta-item">
+                                <div class="qb-meta-icon bg-primary-light text-primary"><i class="bi bi-journal-text"></i></div>
+                                <div class="qb-meta-text">
+                                    <span class="label">Số câu hỏi</span>
+                                    <span class="value"><strong id="quizQuestionCount">0</strong> câu</span>
+                                </div>
+                            </div>
+                            <div class="qb-meta-item">
+                                <div class="qb-meta-icon bg-success-light text-success"><i class="bi bi-check-circle"></i></div>
+                                <div class="qb-meta-text">
+                                    <span class="label">Trạng thái</span>
+                                    <span id="quizStatus" class="badge">Nháp</span>
+                                </div>
+                            </div>
+                            <div class="qb-meta-item flex-grow-1 text-end" id="quizScheduleInfoWrap">
+                                <span id="quizScheduleInfo" class="small text-muted"></span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);overflow:hidden;">
-                    <div style="padding:1rem 1.5rem;border-bottom:1px solid var(--color-border);display:flex;justify-content:space-between;align-items:center;gap:1rem;">
-                        <span style="font-weight:700;font-size:0.95rem;"><i class="bi bi-list-ol me-2" style="color:var(--color-primary);"></i>Câu hỏi trong đề thi</span>
-                        <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
-                            <span style="background:var(--color-primary-light);color:var(--color-primary);border-radius:var(--radius-pill);padding:0.25rem 0.875rem;font-size:0.78rem;font-weight:600;">Tổng điểm: <span id="totalPoints">0</span></span>
-                            <button id="publishBtn" class="btn btn-success btn-sm" onclick="togglePublish()" style="display:none">
-                                <i class="bi bi-send me-1"></i>Công khai
-                            </button>
-                            <button id="unpublishBtn" class="btn btn-warning btn-sm" onclick="togglePublish()" style="display:none">
-                                <i class="bi bi-eye-slash me-1"></i>Ẩn bài
-                            </button>
+                <!-- Selected Questions Section -->
+                <div class="qb-section-card">
+                    <div class="qb-section-header">
+                        <h3 class="qb-section-title"><i class="bi bi-layers-half me-2"></i>Cấu trúc đề thi</h3>
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="qb-points-badge">
+                                <span class="label">Tổng điểm:</span>
+                                <span id="totalPoints" class="value">0</span>
+                            </div>
+                            <div id="publishActions">
+                                <button id="publishBtn" class="btn btn-success btn-sm px-3" onclick="togglePublish()" style="display:none">
+                                    <i class="bi bi-send-fill me-1"></i>Công khai
+                                </button>
+                                <button id="unpublishBtn" class="btn btn-warning btn-sm px-3" onclick="togglePublish()" style="display:none">
+                                    <i class="bi bi-eye-slash-fill me-1"></i>Ẩn bài
+                                </button>
+                            </div>
                         </div>
                     </div>
+                    
                     <ul id="selectedQuestionsList" class="list-group list-group-flush"></ul>
-                    <div id="noQuestionsMsg" class="empty-state">
-                        <div class="empty-icon"><i class="bi bi-inbox"></i></div>
-                        <div class="empty-title">Chưa có câu hỏi nào</div>
-                        <p class="empty-desc">Thêm câu hỏi từ Ngân hàng câu hỏi bên phải.</p>
+                    
+                    <div id="noQuestionsMsg" class="empty-state py-5">
+                        <div class="empty-icon"><i class="bi bi-clipboard-x text-muted opacity-50"></i></div>
+                        <h4 class="empty-title mt-3">Đề thi đang trống</h4>
+                        <p class="empty-desc">Chọn câu hỏi từ ngân hàng bên phải hoặc dùng AI để tạo nhanh.</p>
+                        <button class="btn btn-primary mt-3" data-bs-toggle="modal" data-bs-target="#aiGeneratorModal">
+                            <i class="bi bi-stars me-2"></i>Thử tạo bằng AI ngay
+                        </button>
                     </div>
                 </div>
             </div>
 
             <!-- Right: Question Bank -->
             <div class="col-lg-4">
-                <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);overflow:hidden;position:sticky;top:80px;">
-                    <div style="padding:1rem 1.25rem;border-bottom:1px solid var(--color-border);">
-                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
-                            <span style="font-weight:700;font-size:0.875rem;"><i class="bi bi-bank2 me-2" style="color:var(--color-success);"></i>Ngân hàng</span>
-                            <div style="display:flex;gap:0.5rem;">
-                                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#aiGeneratorModal" style="font-size:0.78rem;">
-                                    <i class="bi bi-stars"></i> AI
+                <div class="qb-sidebar-card sticky-top" style="top: 85px; z-index: 100;">
+                    <div class="qb-sidebar-header">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h3 class="qb-sidebar-title"><i class="bi bi-bank2 me-2"></i>Ngân hàng</h3>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-icon-only bg-primary-light text-primary" data-bs-toggle="modal" data-bs-target="#aiGeneratorModal" title="Tạo bằng AI">
+                                    <i class="bi bi-stars"></i>
                                 </button>
-                                <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#createQuestionModal" style="font-size:0.78rem;">
-                                    <i class="bi bi-plus-circle me-1"></i>Tạo câu hỏi thủ công
+                                <button class="btn btn-icon-only bg-success-light text-success" data-bs-toggle="modal" data-bs-target="#createQuestionModal" title="Tạo thủ công">
+                                    <i class="bi bi-plus-lg"></i>
                                 </button>
                             </div>
                         </div>
-                        <div class="d-flex gap-2 mb-2">
-                            <div style="position:relative;flex:1;">
-                                <i class="bi bi-search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--color-muted);font-size:0.875rem;"></i>
-                                <input type="text" class="form-control" id="bankSearch" placeholder="Tìm câu hỏi..." oninput="filterBank()" style="padding-left:2.25rem;font-size:0.875rem;">
-                            </div>
+                        <div class="qb-search-wrap">
+                            <i class="bi bi-search qb-search-icon"></i>
+                            <input type="text" class="form-control qb-search-input" id="bankSearch" placeholder="Tìm kiếm câu hỏi..." oninput="filterBank()">
                         </div>
                     </div>
-                    <div style="max-height:580px;overflow-y:auto;">
+                    <div class="qb-bank-list-wrap">
                         <ul id="questionBankList" class="list-group list-group-flush border-0"></ul>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
 
 
-{% include 'components/ai_generator_modal.html' with show_save_to_quiz=True %}
+    {% include 'components/ai_generator_modal.html' with show_save_to_quiz=True %}
 
-<!-- Modal: Create/Edit Question (Replaced with Question Bank layout) -->
-<div class="modal fade" id="createQuestionModal" tabindex="-1" data-bs-backdrop="static">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header bg-success text-white">
-                <h5 class="modal-title" id="qbModalTitle">Tạo câu hỏi thủ công</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body bg-light">
-                <form id="createQuestionForm">
-                    <div class="row g-4">
-                        <div class="col-md-8">
-                            <div class="card border-0 shadow-sm h-100">
-                                <div class="card-body">
-                                    <div class="row mb-3">
-                                        <div class="col-md-4">
-                                            <label class="form-label fw-bold">Môn học</label>
-                                            <select id="qbSubject" class="form-select form-select-sm" disabled>
-                                                <!-- Populated by JS -->
-                                            </select>
+    <!-- Modal: Create/Edit Question (Replaced with Question Bank layout) -->
+    <div class="modal fade" id="createQuestionModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title" id="qbModalTitle">Tạo câu hỏi thủ công</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body bg-light">
+                    <form id="createQuestionForm">
+                        <div class="row g-4">
+                            <div class="col-md-8">
+                                <div class="card border-0 shadow-sm h-100">
+                                    <div class="card-body">
+                                        <div class="row mb-3">
+                                            <div class="col-md-4">
+                                                <label class="form-label fw-bold">Môn học</label>
+                                                <select id="qbSubject" class="form-select form-select-sm" disabled>
+                                                    <!-- Populated by JS -->
+                                                </select>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label fw-bold">Độ khó</label>
+                                                <select id="qbDiff" class="form-select form-select-sm">
+                                                    <option value="easy">Nhận biết</option>
+                                                    <option value="medium" selected>Thông hiểu</option>
+                                                    <option value="hard">Vận dụng</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label fw-bold">Dạng câu hỏi</label>
+                                                <select id="qbType" class="form-select form-select-sm"
+                                                    onchange="toggleQbOptions()">
+                                                    <option value="multiple_choice" selected>Trắc nghiệm (1 Lựa chọn)
+                                                    </option>
+                                                    <option value="true_false">Đúng / Sai (4 phát biểu)</option>
+                                                    <option value="short_answer">Trả lời ngắn (Điền từ)</option>
+                                                </select>
+                                            </div>
                                         </div>
-                                        <div class="col-md-4">
-                                            <label class="form-label fw-bold">Độ khó</label>
-                                            <select id="qbDiff" class="form-select form-select-sm">
-                                                <option value="easy">Nhận biết</option>
-                                                <option value="medium" selected>Thông hiểu</option>
-                                                <option value="hard">Vận dụng</option>
-                                            </select>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <label class="form-label fw-bold">Dạng câu hỏi</label>
-                                            <select id="qbType" class="form-select form-select-sm" onchange="toggleQbOptions()">
-                                                <option value="multiple_choice" selected>Trắc nghiệm (1 Lựa chọn)</option>
-                                                <option value="true_false">Đúng / Sai (4 phát biểu)</option>
-                                                <option value="short_answer">Trả lời ngắn (Điền từ)</option>
-                                            </select>
-                                        </div>
-                                    </div>
 
-                                    <div class="mb-3">
-                                        <label class="form-label fw-bold">Nội dung câu hỏi</label>
-                                        <textarea id="qbText" name="qbText"></textarea>
+                                        <div class="mb-3">
+                                            <label class="form-label fw-bold">Nội dung câu hỏi</label>
+                                            <textarea id="qbText" name="qbText"></textarea>
+                                        </div>
+                                        <div class="mb-3" id="qbContextWrapper" style="display: none;">
+                                            <label class="form-label fw-bold">Ngữ cảnh (dùng cho dạng Đúng/Sai)</label>
+                                            <textarea id="qbContext" class="form-control" rows="3"
+                                                placeholder="Nhập đoạn văn, ngữ cảnh chung cho 4 câu hỏi con..."></textarea>
+                                        </div>
+                                        <div class="px-3 py-2 bg-light border rounded mb-3">
+                                            <p class="small text-muted mb-1"><i
+                                                    class="bi bi-info-circle me-1"></i><strong>Mẹo soạn thảo:</strong>
+                                                Bạn có thể dán mã Markdown ảnh từ Kho sang đây.</p>
+                                        </div>
+
+                                        <label class="form-label fw-bold mt-3 mb-2"><i
+                                                class="bi bi-check2-square me-2"></i>Các phương án / Đáp án</label>
+                                        <div id="qbOptionsContainer" class="bg-light p-3 rounded border">
+                                            <!-- Dynamic Content -->
+                                        </div>
+                                        <div id="createQError" class="text-danger small mt-2"></div>
                                     </div>
-                                    <div class="mb-3" id="qbContextWrapper" style="display: none;">
-                                        <label class="form-label fw-bold">Ngữ cảnh (dùng cho dạng Đúng/Sai)</label>
-                                        <textarea id="qbContext" class="form-control" rows="3" placeholder="Nhập đoạn văn, ngữ cảnh chung cho 4 câu hỏi con..."></textarea>
+                                </div>
+                            </div>
+
+                            <div class="col-md-4">
+                                <div class="card border-0 shadow-sm mb-4">
+                                    <div class="card-header bg-white fw-bold"><i class="bi bi-images me-2"></i>Kho ảnh
+                                        đính kèm</div>
+                                    <div class="card-body">
+                                        <p class="small text-muted mb-2">Tải ảnh lên và lấy Link để chèn vào Nội dung
+                                            hoặc Phương án.</p>
+                                        <div class="mb-3">
+                                            <input type="file" id="qbImageFile" class="form-control form-control-sm"
+                                                accept="image/*">
+                                        </div>
+                                        <button class="btn btn-sm btn-primary w-100 mb-3" type="button"
+                                            onclick="uploadQuizBuilderImage()">
+                                            <i class="bi bi-cloud-upload me-1"></i>Tải ảnh lên Kho
+                                        </button>
+                                        <div id="qbImageStatus" class="small mb-2"></div>
+                                        <div id="qbImageList" class="border rounded p-2"
+                                            style="max-height: 380px; overflow-y: auto; background: #fafafa;"></div>
                                     </div>
-                                    <div class="px-3 py-2 bg-light border rounded mb-3">
-                                        <p class="small text-muted mb-1"><i class="bi bi-info-circle me-1"></i><strong>Mẹo soạn thảo:</strong> Bạn có thể dán mã Markdown ảnh từ Kho sang đây.</p>
-                                    </div>
-                                    
-                                    <label class="form-label fw-bold mt-3 mb-2"><i class="bi bi-check2-square me-2"></i>Các phương án / Đáp án</label>
-                                    <div id="qbOptionsContainer" class="bg-light p-3 rounded border">
-                                        <!-- Dynamic Content -->
-                                    </div>
-                                    <div id="createQError" class="text-danger small mt-2"></div>
                                 </div>
                             </div>
                         </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <div class="form-check me-auto">
+                        <input class="form-check-input" type="checkbox" id="addManualToQuiz" checked>
+                        <label class="form-check-label small" for="addManualToQuiz">Thêm luôn vào đề thi hiện
+                            tại</label>
+                    </div>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="button" class="btn btn-success px-4" onclick="submitCreateQuestion()"><i
+                            class="bi bi-check2-circle me-1"></i>Lưu câu hỏi</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
-                        <div class="col-md-4">
-                            <div class="card border-0 shadow-sm mb-4">
-                                <div class="card-header bg-white fw-bold"><i class="bi bi-images me-2"></i>Kho ảnh đính kèm</div>
-                                <div class="card-body">
-                                    <p class="small text-muted mb-2">Tải ảnh lên và lấy Link để chèn vào Nội dung hoặc Phương án.</p>
-                                    <div class="mb-3">
-                                        <input type="file" id="qbImageFile" class="form-control form-control-sm" accept="image/*">
-                                    </div>
-                                    <button class="btn btn-sm btn-primary w-100 mb-3" type="button" onclick="uploadQuizBuilderImage()">
-                                        <i class="bi bi-cloud-upload me-1"></i>Tải ảnh lên Kho
-                                    </button>
-                                    <div id="qbImageStatus" class="small mb-2"></div>
-                                    <div id="qbImageList" class="border rounded p-2" style="max-height: 380px; overflow-y: auto; background: #fafafa;"></div>
-                                </div>
+    <!-- Modal: Edit Quiz Settings -->
+    <div class="modal fade" id="editQuizModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Cài đặt đề thi</h5><button type="button" class="btn-close"
+                        data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editQuizForm">
+                        <div class="mb-3">
+                            <label class="form-label">Tiêu đề</label>
+                            <input type="text" class="form-control" id="editQuizTitle" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Mô tả</label>
+                            <textarea class="form-control" id="editQuizDesc" rows="2"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Thời gian làm bài (phút)</label>
+                            <input type="number" class="form-control" id="editQuizDuration" min="1">
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <label class="form-label">Hẹn giờ HT công khai</label>
+                                <input type="datetime-local" class="form-control" id="editQuizPublishAt"
+                                    title="Học sinh chỉ thấy nếu Trạng thái là Công Khai VÀ quá thời gian này. Bỏ trống = Công khai ngay.">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">Hạn nộp bài</label>
+                                <input type="datetime-local" class="form-control" id="editQuizDueDate"
+                                    title="Mốc thời gian kết thúc hoặc thu bài (không bắt buộc).">
                             </div>
                         </div>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <div class="form-check me-auto">
-                    <input class="form-check-input" type="checkbox" id="addManualToQuiz" checked>
-                    <label class="form-check-label small" for="addManualToQuiz">Thêm luôn vào đề thi hiện tại</label>
+                    </form>
                 </div>
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
-                <button type="button" class="btn btn-success px-4" onclick="submitCreateQuestion()"><i class="bi bi-check2-circle me-1"></i>Lưu câu hỏi</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Modal: Edit Quiz Settings -->
-<div class="modal fade" id="editQuizModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title">Cài đặt đề thi</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body">
-                <form id="editQuizForm">
-                    <div class="mb-3">
-                        <label class="form-label">Tiêu đề</label>
-                        <input type="text" class="form-control" id="editQuizTitle" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Mô tả</label>
-                        <textarea class="form-control" id="editQuizDesc" rows="2"></textarea>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Thời gian làm bài (phút)</label>
-                        <input type="number" class="form-control" id="editQuizDuration" min="1">
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-6">
-                            <label class="form-label">Hẹn giờ HT công khai</label>
-                            <input type="datetime-local" class="form-control" id="editQuizPublishAt" title="Học sinh chỉ thấy nếu Trạng thái là Công Khai VÀ quá thời gian này. Bỏ trống = Công khai ngay.">
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label">Hạn nộp bài</label>
-                            <input type="datetime-local" class="form-control" id="editQuizDueDate" title="Mốc thời gian kết thúc hoặc thu bài (không bắt buộc).">
-                        </div>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
-                <button type="button" class="btn btn-primary" onclick="submitEditQuiz()">Lưu cập nhật</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Modal Delete Confirm -->
-<div class="modal fade" id="deleteConfirmModal" tabindex="-1">
-    <div class="modal-dialog modal-sm">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-body text-center p-4">
-                <i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 3rem;"></i>
-                <h5 class="mt-3 mb-3 fw-bold">Rút câu hỏi?</h5>
-                <p class="text-muted small">Hành động này sẽ rút câu hỏi khỏi đề thi hiện tại. Câu hỏi vẫn còn trong Ngân hàng.</p>
-                <div class="d-flex justify-content-center gap-2 mt-4">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Hủy</button>
-                    <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Đồng ý</button>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="button" class="btn btn-primary" onclick="submitEditQuiz()">Lưu cập nhật</button>
                 </div>
             </div>
         </div>
     </div>
-</div>
 
-<!-- Modal Delete Quiz Confirm -->
-<div class="modal fade" id="deleteQuizConfirmModal" tabindex="-1">
-    <div class="modal-dialog modal-sm">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-body text-center p-4">
-                <i class="bi bi-trash-fill text-danger" style="font-size: 3rem;"></i>
-                <h5 class="mt-3 mb-3 fw-bold">Xoá đề thi?</h5>
-                <p class="text-muted small">Bạn có chắc chắn muốn xoá toàn bộ đề thi này không? Hành động này không thể hoàn tác.</p>
-                <div class="d-flex justify-content-center gap-2 mt-4">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Hủy</button>
-                    <button type="button" class="btn btn-danger" id="confirmDeleteQuizBtn">Đồng ý Xoá</button>
+    <!-- Modal Delete Confirm -->
+    <div class="modal fade" id="deleteConfirmModal" tabindex="-1">
+        <div class="modal-dialog modal-sm">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-body text-center p-4">
+                    <i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 3rem;"></i>
+                    <h5 class="mt-3 mb-3 fw-bold">Rút câu hỏi?</h5>
+                    <p class="text-muted small">Hành động này sẽ rút câu hỏi khỏi đề thi hiện tại. Câu hỏi vẫn còn trong
+                        Ngân hàng.</p>
+                    <div class="d-flex justify-content-center gap-2 mt-4">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Hủy</button>
+                        <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Đồng ý</button>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
+
+    <!-- Modal Delete Quiz Confirm -->
+    <div class="modal fade" id="deleteQuizConfirmModal" tabindex="-1">
+        <div class="modal-dialog modal-sm">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-body text-center p-4">
+                    <i class="bi bi-trash-fill text-danger" style="font-size: 3rem;"></i>
+                    <h5 class="mt-3 mb-3 fw-bold">Xoá đề thi?</h5>
+                    <p class="text-muted small">Bạn có chắc chắn muốn xoá toàn bộ đề thi này không? Hành động này không
+                        thể hoàn tác.</p>
+                    <div class="d-flex justify-content-center gap-2 mt-4">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Hủy</button>
+                        <button type="button" class="btn btn-danger" id="confirmDeleteQuizBtn">Đồng ý Xoá</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
 
 
 
-{% endblock %}
+    {% endblock %}
 
-{% block scripts %}
-<!-- EasyMDE / SimpleMDE -->
-<link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">
-<script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
+    {% block scripts %}
+    <!-- EasyMDE / SimpleMDE -->
+    <link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">
+    <script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
 
-<script>
-    const quizId = "{{ quiz_id }}";
-</script>
-<script src="{% static 'js/quiz_builder.js' %}?v=20260320-4"></script>
+    <script>
+        const quizId = "{{ quiz_id }}";
+    </script>
+    <script src="{% static 'js/quiz_builder.js' %}?v=20260320-4"></script>
 <style>
+/* Quiz Builder Premium Styles */
+.qb-header-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+    position: relative;
+}
+.qb-header-top-accent {
+    height: 4px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+}
+.qb-title {
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.35rem;
+    color: var(--color-text);
+}
+.qb-desc {
+    color: var(--color-muted);
+    font-size: 0.9rem;
+    margin: 0;
+}
+.qb-btn-outline-primary, .qb-btn-outline-danger {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: var(--radius-md);
+    transition: var(--transition);
+}
+.qb-btn-outline-primary {
+    color: var(--color-primary);
+    border: 1.5px solid var(--color-primary-light);
+    background: var(--color-primary-light);
+}
+.qb-btn-outline-primary:hover {
+    background: var(--color-primary);
+    color: #fff;
+    border-color: var(--color-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
+}
+.qb-btn-outline-danger {
+    color: var(--color-danger);
+    border: 1.5px solid var(--color-danger-light);
+    background: var(--color-danger-light);
+}
+.qb-btn-outline-danger:hover {
+    background: var(--color-danger);
+    color: #fff;
+    border-color: var(--color-danger);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+}
+
+.qb-meta-container {
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+    align-items: center;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--color-border);
+}
+.qb-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+.qb-meta-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+}
+.qb-meta-text {
+    display: flex;
+    flex-direction: column;
+}
+.qb-meta-text .label {
+    font-size: 0.7rem;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    margin-bottom: 0.25rem;
+}
+.qb-meta-text .value {
+    font-size: 0.9rem;
+    color: var(--color-text);
+    line-height: 1;
+}
+
+.qb-section-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+.qb-section-header {
+    padding: 1.25rem 1.5rem;
+    background: #fff;
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+.qb-section-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0;
+    color: var(--color-text);
+}
+.qb-points-badge {
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+    border-radius: var(--radius-pill);
+    padding: 0.4rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.qb-points-badge .label { opacity: 0.8; font-weight: 600; }
+
+/* Question Items */
+.qb-question-item {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--color-border);
+    transition: var(--transition);
+    position: relative;
+    background: #fff;
+}
+.qb-question-item:hover {
+    background: var(--color-bg);
+}
+.qb-question-item:last-child {
+    border-bottom: none;
+}
+.qb-q-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+.qb-q-number {
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: var(--color-primary);
+    background: var(--color-primary-light);
+    padding: 0.25rem 0.75rem;
+    border-radius: var(--radius-pill);
+}
+
+/* Sidebar Styles */
+.qb-sidebar-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+.qb-sidebar-header {
+    padding: 1.25rem;
+    border-bottom: 1px solid var(--color-border);
+    background: #fff;
+}
+.qb-sidebar-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin: 0;
+}
+.qb-search-wrap {
+    position: relative;
+}
+.qb-search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--color-muted);
+    font-size: 0.9rem;
+}
+.qb-search-input {
+    padding-left: 2.5rem;
+    background: var(--color-bg);
+    border-color: transparent;
+    font-size: 0.875rem;
+    height: 42px;
+}
+.qb-search-input:focus {
+    background: #fff;
+    border-color: var(--color-primary);
+}
+.qb-bank-list-wrap {
+    max-height: calc(100vh - 250px);
+    overflow-y: auto;
+}
+.qb-bank-item {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--color-border);
+    transition: var(--transition);
+    cursor: default;
+}
+.qb-bank-item:hover {
+    background: var(--color-bg);
+}
+.qb-bank-item:last-child {
+    border-bottom: none;
+}
+.qb-bank-q-text {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-text);
+    margin-bottom: 0.5rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.btn-icon-only {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: var(--transition);
+    border: none;
+}
+.btn-icon-only:hover {
+    transform: translateY(-2px);
+    filter: brightness(0.95);
+}
+
+/* Animations */
+.animate-in {
+    animation: fadeInUp 0.5s ease backwards;
+}
+.animate-in-delay-1 { animation-delay: 0.1s; }
+.animate-in-delay-2 { animation-delay: 0.2s; }
+
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(15px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 .text-truncate-2 { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
 .ai-draft-board { min-height: 400px; max-height: 500px; overflow-y: auto; background-color: #f8f9fa; }
 </style>
-{% endblock %}
+    {% endblock %}

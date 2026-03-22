@@ -43,9 +43,16 @@ async function init() {
         
         const filterSub = document.getElementById('filterSubject');
         const qSub = document.getElementById('qSubject');
+        const aiExtractSub = document.getElementById('aiExtractSubject');
+        
+        if (filterSub) filterSub.innerHTML = '<option value="">Tất cả môn học</option>';
+        if (qSub) qSub.innerHTML = '';
+        if (aiExtractSub) aiExtractSub.innerHTML = '';
+        
         subjects.forEach(s => {
             filterSub.add(new Option(s.name, s.id));
             qSub.add(new Option(s.name, s.id));
+            if (aiExtractSub) aiExtractSub.add(new Option(s.name, s.id));
         });
 
         const classRes = await fetch('/api/classes/', { headers: authHeaders() });
@@ -498,41 +505,29 @@ async function saveQuestion() {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Đang lưu...';
     
     try {
-        let qId = currentEditId;
-        
-        if (!qId) {
-            // Step 1: Create Question
-            const res = await fetch('/api/exams/questions/', {
+        let res;
+        if (!currentEditId) {
+            // Create Question (Single-Shot)
+            res = await fetch('/api/exams/questions/', {
                 method: 'POST',
                 headers: authHeaders(),
                 body: JSON.stringify(payload)
             });
-            if(!res.ok) throw new Error('Không thể tạo câu hỏi');
-            const newQ = await res.json();
-            qId = newQ.id;
+        } else {
+            // Update Question
+            res = await fetch(`/api/exams/questions/${currentEditId}/update-full/`, {
+                method: 'PUT',
+                headers: authHeaders(),
+                body: JSON.stringify(payload)
+            });
         }
 
-        // Step 2: Update options and other details via update-full
-        // We use PUT /api/exams/questions/<id>/update-full/ which handles nested options
-        const resFull = await fetch(`/api/exams/questions/${qId}/update-full/`, {
-            method: 'PUT',
-            headers: authHeaders(),
-            body: JSON.stringify({
-                text: text,
-                difficulty: diff,
-                question_type: type,
-                context: ctx,
-                correct_answer_text: correctText,
-                options: options
-            })
-        });
-
-        if(resFull.ok) {
+        if(res.ok) {
             showGlobalAlert(currentEditId ? 'Cập nhật thành công!' : 'Tạo mới thành công!', 'success');
             bootstrap.Modal.getInstance(document.getElementById('questionModal')).hide();
             loadQuestions();
         } else {
-            const errData = await resFull.json();
+            const errData = await res.json();
             alert('Lỗi lưu chi tiết: ' + (errData.error || 'Unknown error'));
         }
         
@@ -1113,7 +1108,7 @@ async function saveSelectedDrafts(source) {
             headers: authHeaders(),
             body: JSON.stringify({
                 questions: selectedDrafts,
-                subject_id: document.getElementById('filterSubject').value || subjects[0]?.id,
+                subject_id: source === 'file' ? document.getElementById('aiExtractSubject').value : (document.getElementById('filterSubject').value || subjects[0]?.id),
             })
         });
 
@@ -1169,29 +1164,45 @@ document.getElementById('aiExtractForm').addEventListener('submit', async functi
         const cloudName = 'dvwkjiz2i';
         const uploadPreset = 'nvh_upload';
         
-        const cloudFormData = new FormData();
-        cloudFormData.append('file', file);
-        cloudFormData.append('upload_preset', uploadPreset);
+        const filesData = [];
+        const filesCount = fileInput.files.length;
         
-        errBox.innerHTML = '<span class="text-info">Đang tải tài liệu lên Cloud Storage trung gian...</span>';
-        
-        const cloudRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
-            method: 'POST',
-            body: cloudFormData
-        });
-        
-        if (!cloudRes.ok) {
-            const cloudErr = await cloudRes.json();
-            throw new Error(cloudErr.error?.message || 'Có lỗi khi upload file.');
+        for (let i = 0; i < filesCount; i++) {
+            const f = fileInput.files[i];
+            errBox.innerHTML = `<span class="text-info">Đang tải tài liệu lên Cloud Storage trung gian (${i+1}/${filesCount})...</span>`;
+            
+            const cloudFormData = new FormData();
+            cloudFormData.append('file', f);
+            cloudFormData.append('upload_preset', uploadPreset);
+            
+            const cloudRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
+                method: 'POST',
+                body: cloudFormData
+            });
+            
+            if (!cloudRes.ok) {
+                const cloudErr = await cloudRes.json();
+                throw new Error(cloudErr.error?.message || 'Có lỗi khi upload file.');
+            }
+            
+            const cloudData = await cloudRes.json();
+            filesData.push({ file_url: cloudData.secure_url, file_name: f.name });
         }
         
-        const cloudData = await cloudRes.json();
-        const fileUrl = cloudData.secure_url;
-        
-        errBox.innerHTML = '<span class="text-success">Tải xong. AI đang xử lý trích xuất câu hỏi...</span>';
+        errBox.innerHTML = '<span class="text-success">Tải xong. Trình phân tích đang xử lý trích xuất câu hỏi...</span>';
 
-        // Gửi URL tài liệu lên Vercel Backend thay thế cho file
-        const payload = { file_url: fileUrl, file_name: file.name };
+        // Lấy thông tin Môn học nếu có
+        let subject_id = null;
+        const aiExtractSub = document.getElementById('aiExtractSubject');
+        if (aiExtractSub && aiExtractSub.value) {
+            subject_id = aiExtractSub.value;
+        }
+
+        // Gửi mảng tài liệu lên Backend
+        const payload = { 
+            files: filesData,
+            subject_id: subject_id
+        };
 
         const res = await fetch('/api/ai/generate/extract-file/', {
             method: 'POST',
@@ -1203,6 +1214,7 @@ document.getElementById('aiExtractForm').addEventListener('submit', async functi
         if (res.ok) {
             errBox.innerHTML = '';
             currentDrafts.file = data.questions;
+            window.extractedImagesMap = (data.images && typeof data.images === 'object') ? data.images : {};
             renderDraftBoard('file');
             if (currentDrafts.file.length > 0) saveBtn.style.display = 'inline-block';
         } else {
@@ -1284,3 +1296,5 @@ document.getElementById('ragGenerateForm').addEventListener('submit', async func
         loader.innerHTML = '';
     }
 });
+
+init();

@@ -125,62 +125,17 @@ class RAGChatbotView(APIView):
             return Response({"error": "Lớp học không tồn tại."}, status=status.HTTP_404_NOT_FOUND)
 
         try:
-            # Bước 1: Chuyển đổi câu hỏi thành Vector Embeddings
-            query_embedding = gemini_client.embed_content(
-                content=question,
-                task_type="RETRIEVAL_QUERY",
-                output_dimensionality=768,
-                use_cache=True,
-            )
-
             response_cache_key = self._make_chat_cache_key(class_id=class_id, question=question)
             cached_answer = cache.get(response_cache_key)
             if isinstance(cached_answer, dict):
                 return Response(cached_answer)
 
-            # Bước 2: Tìm kiếm gần tương đồng trên PostgreSQL Vector (pgvector)
-            # Lấy 5 khối kiến thức có khoảng cách nhỏ nhất (nghĩa là sát nhất với câu hỏi)
-            closest_chunks = DocumentChunk.objects.filter(
-                document__classroom=classroom
-            ).annotate(
-                distance=L2Distance('embedding', query_embedding)
-            ).order_by('distance')[:5]
-
-            # Rút trích văn bản làm ngữ cảnh
-            context_text, sources = self._build_context_and_sources(closest_chunks)
-
-            if not context_text:
-                context_text = "Không có tài liệu nào trong lớp học này."
-
-            # Bước 3: Tạo Prompt yêu cầu Gemini đóng vai gia sư, có ép Context vào
-            system_prompt = f"""
-Bạn là AI Gia sư tận tậm của Hệ thống NVH Learning. Bạn được kết nối bộ não với kho tài liệu học tập của nhà trường.
-Nhiệm vụ của bạn là giải đáp thắc mắc CÂU HỎI của học sinh bằng cách sử dụng TÀI LIỆU TRÍCH XUẤT dưới đây.
-
-LƯU Ý NGHIÊM NGẶT:
-1. Bạn CHỈ trả lời dựa trên thông tin có trong TÀI LIỆU TRÍCH XUẤT.
-2. Nếu TÀI LIỆU TRÍCH XUẤT không chứa thông tin để trả lời, HÃY TRẢ LỜI: "Tài liệu môn học của NVH Learning trong bài giảng chưa đề cập đến vấn đề này. Hãy hỏi lại giáo viên trên lớp nhé!"
-3. Không được đoán mò hoặc tựa nạp kiến thức mạng ngoài vào để tránh sai sót sách giáo khoa nhà trường.
-4. Trình bày thân thiện, động viên học sinh học tập, có format rõ ràng, dùng bullet point hoặc xuống dòng dễ đọc.
-
-TÀI LIỆU TRÍCH XUẤT:
-{context_text}
-
-CÂU HỎI TỪ HỌC SINH: {question}
-"""
-            # Gọi LLM (Gemini Flash)
-            response = gemini_client.generate_content(
-                system_prompt,
-                model=AI_TUTOR_MODEL,
-                config={
-                    'temperature': 0.2,
-                    'max_output_tokens': 768,
-                },
-            )
-
+            # CẬP NHẬT: Gọi AIGeneratorService Optimize NotebookLM RAG
+            chatbot_answer = AIGeneratorService.chat_with_tutor(class_id, question)
+            
             payload = {
-                "answer": response.text,
-                "sources": sources
+                "answer": chatbot_answer,
+                "sources": [{"doc": "Kiến thức nội bộ lớp học"}]
             }
             cache.set(response_cache_key, payload, timeout=self.CHAT_RESPONSE_CACHE_TTL)
 
@@ -333,137 +288,28 @@ class UploadClassDocumentView(APIView):
                     tmp_file.write(chunk)
                 tmp_file_path = tmp_file.name
 
-            extracted_text = ""
-            
-            # --- Xử lý .docx: Trích text VÀ mô tả ảnh nhúng (cho RAG) ---
-            if ext.lower() == '.docx':
-                try:
-                    print(f"Extracting text + images from DOCX: {tmp_file_path}")
-                    doc_reader = docx.Document(tmp_file_path)
-                    extracted_text = "\n".join([para.text for para in doc_reader.paragraphs if para.text.strip()])
-
-                    # Trích ảnh nhúng, dùng Gemini mô tả từng ảnh, gắn vào text
-                    image_descriptions = []
-                    img_tmp_paths = []
-                    try:
-                        with zipfile.ZipFile(tmp_file_path, 'r') as z:
-                            image_entries = [n for n in z.namelist() if n.startswith('word/media/')]
-                            for entry in image_entries:
-                                img_ext = os.path.splitext(entry)[1].lower()
-                                if img_ext in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'):
-                                    img_data = z.read(entry)
-                                    with tempfile.NamedTemporaryFile(delete=False, suffix=img_ext) as tmp_img:
-                                        tmp_img.write(img_data)
-                                        img_tmp_paths.append(tmp_img.name)
-
-                        if img_tmp_paths:
-                            print(f"  Found {len(img_tmp_paths)} embedded images. Describing with Gemini concurrently...")
-                            import concurrent.futures
-
-                            def describe_image(idx_path):
-                                i, p = idx_path
-                                try:
-                                    uploaded_img = gemini_client.upload_file(path=p)
-                                    desc_response = gemini_client.generate_content([
-                                        uploaded_img,
-                                        "Mô tả chi tiết nội dung của hình ảnh này (có thể là đồ thị, công thức, biểu đồ, mính họa...) theo ngôn ngữ Việt Nam, súc tích, chính xác."
-                                    ], model=AI_EXTRACTION_MODEL)
-                                    try:
-                                        gemini_client.delete_file(uploaded_img.name)
-                                    except:
-                                        pass
-                                    return f"[Hình ảnh {i+1}]: {desc_response.text}"
-                                except Exception as e:
-                                    print(f"  Could not describe image {i+1}: {e}")
-                                    return None
-
-                            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                                results = executor.map(describe_image, enumerate(img_tmp_paths))
-                                for res in results:
-                                    if res:
-                                        image_descriptions.append(res)
-                    finally:
-                        for p in img_tmp_paths:
-                            try:
-                                os.remove(p)
-                            except Exception:
-                                pass
-
-                    if image_descriptions:
-                        extracted_text += "\n\n--- MÔ TẢ HÌNH ẢNH TRONG TÀI LIỆU ---\n" + "\n".join(image_descriptions)
-                        print(f"  Appended {len(image_descriptions)} image descriptions to text.")
-
-                except Exception as docx_err:
-                    print(f"DOCX extraction failed: {str(docx_err)}")
-
-            # --- Nếu chưa có text (hoặc không phải docx), dùng Gemini File API (PDF/Ảnh) ---
-            if not extracted_text.strip():
-                try:
-                    print(f"Uploading file {tmp_file_path} to Gemini for text extraction...")
-                    uploaded_file = gemini_client.upload_file(path=tmp_file_path)
-
-                    prompt = "Hãy trích xuất lại toàn bộ văn bản và bảng biểu có trong tài liệu này một cách chính xác nhất. Đừng thêm bớt nội dung bình luận nào cả. Chỉ nguyên văn bản trong tài liệu."
-                    response = gemini_client.generate_content([uploaded_file, prompt], model=AI_EXTRACTION_MODEL)
-                    extracted_text = response.text
-
-                    try:
-                        gemini_client.delete_file(uploaded_file.name)
-                    except Exception:
-                        pass
-                except Exception as gemini_err:
-                    print(f"Gemini File API failed: {str(gemini_err)}")
-
-            if not extracted_text.strip():
-                os.remove(tmp_file_path)
-                return Response({"error": "Không thể trích xuất văn bản từ tài liệu này (Gemini không hỗ trợ hoặc file lỗi)."}, status=status.HTTP_400_BAD_REQUEST)
-
-            # Lưu Document object
+            # CẬP NHẬT: Sử dụng Optimize 1-Shot của AIGeneratorService
             doc_obj = Document.objects.create(
                 classroom=classroom,
                 title=file_obj.name,
-                file_path=file_obj.name # Tạm lưu tên file
+                file_path=file_obj.name
             )
 
-            # Chia văn bản thành các chunks và tính vector qua Gemini
-            words = extracted_text.split()
-            chunk_size = 300
-            chunks = []
-            for i in range(0, len(words), chunk_size):
-                chunk = ' '.join(words[i:i + chunk_size])
-                if len(chunk.strip()) > 0:
-                    chunks.append(chunk)
-
-            import concurrent.futures
-            
-            def create_embedded_chunk(args):
-                idx, chunk_text = args
-                try:
-                    embedding = gemini_client.embed_content(
-                        content=chunk_text,
-                        task_type="RETRIEVAL_DOCUMENT",
-                        output_dimensionality=768,
-                    )
-                    return {"idx": idx, "text": chunk_text, "emb": embedding}
-                except Exception as e:
-                    print(f"Embed chunk {idx} failed: {e}")
-                    return None
-
-            print(f"Embedding {len(chunks)} chunks concurrently...")
-            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                results = executor.map(create_embedded_chunk, enumerate(chunks))
-                for res in results:
-                    if res:
-                        DocumentChunk.objects.create(
-                            document=doc_obj,
-                            chunk_index=res["idx"],
-                            content=res["text"],
-                            embedding=res["emb"]
-                        )
-
-            os.remove(tmp_file_path)
-            
-            serializer = DocumentSerializer(doc_obj)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            try:
+                extraction_result = AIGeneratorService.ingest_document(tmp_file_path, doc_obj.id)
+                os.remove(tmp_file_path)
+                
+                serializer = DocumentSerializer(doc_obj)
+                response_data = serializer.data
+                response_data['knowledge_chunks_count'] = extraction_result.get('knowledge_chunks_count', 0)
+                response_data['questions_extracted'] = len(extraction_result.get('questions', []))
+                
+                return Response(response_data, status=status.HTTP_201_CREATED)
+            except Exception as ai_err:
+                doc_obj.delete()
+                if os.path.exists(tmp_file_path):
+                    os.remove(tmp_file_path)
+                return Response({"error": f"Lỗi xử lý hệ thống AI: {str(ai_err)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         except Exception as e:
             return Response({"error": f"Lỗi upload: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -494,12 +340,19 @@ class AIExtractFromFileView(APIView):
     parser_classes = [MultiPartParser, JSONParser]
 
     def post(self, request):
+        files_data = request.data.get('files')
         file_obj = request.FILES.get('file')
         file_url = request.data.get('file_url')
         file_name = request.data.get('file_name', 'downloaded_file.docx')
-
-        if not file_obj and not file_url:
-            return Response({"error": "No file or file_url provided."}, status=status.HTTP_400_BAD_REQUEST)
+        subject_id = request.data.get('subject_id')
+        subject_name = ""
+        
+        if subject_id:
+            try:
+                from classes.models import Subject
+                subject_name = Subject.objects.get(id=subject_id).name
+            except Exception:
+                pass
 
         import tempfile
         import os
@@ -507,49 +360,72 @@ class AIExtractFromFileView(APIView):
         import requests
         import mimetypes
 
-        tmp_file_path = None
-        try:
-            if file_obj:
-                ext = os.path.splitext(file_obj.name)[1]
-                with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
-                    for chunk in file_obj.chunks():
-                        tmp_file.write(chunk)
-                    tmp_file_path = tmp_file.name
-                mime_type = file_obj.content_type
-            else:
-                # Download from Cloudinary URL into /tmp
-                ext = os.path.splitext(file_name)[1]
-                with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
-                    resp = requests.get(file_url, stream=True)
-                    resp.raise_for_status()
-                    for chunk in resp.iter_content(chunk_size=8192):
-                        tmp_file.write(chunk)
-                    tmp_file_path = tmp_file.name
-                mime_type, _ = mimetypes.guess_type(file_name)
-                if not mime_type:
-                    mime_type = 'application/octet-stream'
+        to_process = []
+        if files_data and isinstance(files_data, list):
+            to_process = files_data
+        elif file_url:
+            to_process.append({'file_url': file_url, 'file_name': file_name})
+        elif file_obj:
+            to_process.append({'file_obj': file_obj})
 
-            questions_data = AIGeneratorService.extract_from_file(
-                file_path=tmp_file_path,
-                mime_type=mime_type,
-            )
-            return Response({"questions": questions_data})
+        if not to_process:
+            return Response({"error": "No files provided."}, status=status.HTTP_400_BAD_REQUEST)
+
+        all_questions = []
+        all_images_map = {}
+
+        try:
+            for item in to_process:
+                tmp_file_path = None
+                try:
+                    target_file_obj = item.get('file_obj')
+                    target_file_url = item.get('file_url')
+                    target_file_name = item.get('file_name', 'downloaded.docx')
+
+                    if target_file_obj:
+                        ext = os.path.splitext(target_file_obj.name)[1]
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
+                            for chunk in target_file_obj.chunks():
+                                tmp_file.write(chunk)
+                            tmp_file_path = tmp_file.name
+                        mime_type = target_file_obj.content_type
+                    elif target_file_url:
+                        ext = os.path.splitext(target_file_name)[1]
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
+                            resp = requests.get(target_file_url, stream=True)
+                            resp.raise_for_status()
+                            for chunk in resp.iter_content(chunk_size=8192):
+                                tmp_file.write(chunk)
+                            tmp_file_path = tmp_file.name
+                        mime_type, _ = mimetypes.guess_type(target_file_name)
+                        if not mime_type:
+                            mime_type = 'application/octet-stream'
+
+                    if tmp_file_path:
+                        questions_data, images_map = AIGeneratorService.extract_from_file(
+                            file_path=tmp_file_path,
+                            mime_type=mime_type,
+                            subject_name=subject_name
+                        )
+                        all_questions.extend(questions_data)
+                        all_images_map.update(images_map)
+                        all_images_map.update(images_map)
+
+                finally:
+                    if tmp_file_path and os.path.exists(tmp_file_path):
+                        try:
+                            os.remove(tmp_file_path)
+                        except Exception:
+                            pass
+
+            return Response({"questions": all_questions, "images": all_images_map})
 
         except Exception as e:
-            # In traceback ra console của Django runserver để dễ debug
             tb.print_exc()
             msg = str(e)
             if "429" in msg or "quota" in msg.lower():
-                msg = "AI hiện đang bận hoặc hết hạn mức (Quota exceeded). Vui lòng thử lại sau 1-2 phút."
+                msg = "AI hiện đang bận hoặc hết hạn mức (Quota exceeded)."
             return Response({"error": msg}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        finally:
-            # Luôn dọn file tạm dù thành công hay lỗi
-            if tmp_file_path and os.path.exists(tmp_file_path):
-                try:
-                    os.remove(tmp_file_path)
-                except Exception:
-                    pass
 
 
 class AIGenerateFromRAGView(APIView):
@@ -734,8 +610,11 @@ class AIBulkSaveQuestionsView(APIView):
             return ''
         parts = []
         for b in blocks:
-            if isinstance(b, dict) and b.get('type') == 'text' and isinstance(b.get('value'), str):
-                parts.append(b.get('value'))
+            if isinstance(b, dict):
+                if b.get('type') == 'text' and isinstance(b.get('value'), str):
+                    parts.append(b.get('value'))
+                elif b.get('type') == 'image' and b.get('sha256'):
+                    parts.append(f"\n[IMAGE_PLACEHOLDER:{b.get('sha256')}]\n")
         return ' '.join(parts).strip()
 
     def _has_image_block(self, blocks):

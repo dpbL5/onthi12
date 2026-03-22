@@ -5,7 +5,7 @@ from .views import (
     QuizQuestionDetailView, UploadImageView,
     QuestionImageUploadView, QuestionImageLinkView, QuestionImageUnlinkView,
     StudentQuizListView, QuizStartView, QuizSubmitView, ClassAnalyticsView,
-    UpdateQuestionFullView, BulkDeleteQuestionsView
+    BulkDeleteQuestionsView
 )
 
 urlpatterns = [
@@ -13,7 +13,7 @@ urlpatterns = [
     path('questions/', QuestionListCreateView.as_view(), name='question-list-create'),
     path('questions/bulk-delete/', BulkDeleteQuestionsView.as_view(), name='question-bulk-delete'),
     path('questions/<int:pk>/', QuestionDetailView.as_view(), name='question-detail'),
-    path('questions/<int:pk>/update-full/', UpdateQuestionFullView.as_view(), name='question-update-full'),
+    path('questions/<int:pk>/update-full/', QuestionDetailView.as_view(), name='question-update-full'),
     path('questions/images/upload/', QuestionImageUploadView.as_view(), name='question-image-upload'),
     path('questions/<int:pk>/images/link/', QuestionImageLinkView.as_view(), name='question-image-link'),
     path('questions/<int:pk>/images/<int:qimg_id>/', QuestionImageUnlinkView.as_view(), name='question-image-unlink'),

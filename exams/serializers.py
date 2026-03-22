@@ -46,9 +46,13 @@ class QuestionImageSerializer(serializers.ModelSerializer):
         ]
 
 
+from django.db import transaction
+
 class QuestionSerializer(serializers.ModelSerializer):
     options = OptionSerializer(many=True, read_only=True)
     question_images = QuestionImageSerializer(many=True, read_only=True)
+    options_data = serializers.ListField(child=serializers.DictField(), required=False, write_only=True)
+    images_data = serializers.ListField(child=serializers.DictField(), required=False, write_only=True)
     subject_name = serializers.CharField(source='subject.name', read_only=True)
     question_type_display = serializers.CharField(
         source='get_question_type_display', read_only=True
@@ -60,8 +64,125 @@ class QuestionSerializer(serializers.ModelSerializer):
             'id', 'question_type', 'question_type_display',
             'subject', 'subject_name', 'difficulty',
             'text', 'content_json', 'context', 'image', 'correct_answer_text',
-            'created_at', 'options', 'question_images',
+            'created_at', 'options', 'question_images', 'options_data', 'images_data'
         ]
+
+    def _blocks_to_text(self, blocks):
+        if not isinstance(blocks, list):
+            return ''
+        parts = []
+        for b in blocks:
+            if isinstance(b, dict) and b.get('type') == 'text' and isinstance(b.get('value'), str):
+                parts.append(b.get('value'))
+        return ' '.join(parts).strip()
+
+    def _has_image_block(self, blocks):
+        if not isinstance(blocks, list):
+            return False
+        return any(isinstance(b, dict) and b.get('type') == 'image' for b in blocks)
+
+    def validate(self, attrs):
+        content_json = self.initial_data.get('content_json') or attrs.get('content_json')
+        text = self.initial_data.get('text') or attrs.get('text', '')
+        text = str(text).strip() if text else ''
+
+        if content_json is not None and not text:
+            text = self._blocks_to_text(content_json)
+
+        if content_json is not None and not text and not self._has_image_block(content_json):
+            raise serializers.ValidationError({"text": "Question content cannot be empty"})
+
+        attrs['text'] = text
+        if content_json is not None:
+             attrs['content_json'] = content_json
+             
+        attrs['options_data'] = self.initial_data.get('options', [])
+        attrs['images_data'] = self.initial_data.get('question_images', [])
+        return attrs
+
+    def create(self, validated_data):
+        options_data = validated_data.pop('options_data', [])
+        images_data = validated_data.pop('images_data', [])
+        
+        request = self.context.get('request')
+        user = request.user if request else None
+
+        with transaction.atomic():
+            question = Question.objects.create(created_by=user, **validated_data)
+            self._handle_options(question, options_data)
+            self._handle_images(question, images_data, user)
+            return question
+
+    def update(self, instance, validated_data):
+        options_data = validated_data.pop('options_data', None)
+        images_data = validated_data.pop('images_data', None)
+        
+        request = self.context.get('request')
+        user = request.user if request else getattr(instance, 'created_by', None)
+
+        with transaction.atomic():
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
+            
+            if options_data is not None:
+                instance.options.all().delete()
+                self._handle_options(instance, options_data)
+                
+            if images_data is not None:
+                instance.question_images.all().delete()
+                self._handle_images(instance, images_data, user)
+                
+            return instance
+
+    def _handle_options(self, question, options_data):
+        if not isinstance(options_data, list):
+            return
+        for opt in options_data:
+            opt_content = opt.get('content_json')
+            opt_text = str(opt.get('text') or '').strip()
+            if not opt_text and isinstance(opt_content, list):
+                opt_text = self._blocks_to_text(opt_content)
+                
+            Option.objects.create(
+                question=question,
+                text=opt_text,
+                content_json=opt_content or [],
+                is_correct=opt.get('is_correct', False)
+            )
+
+    def _handle_images(self, question, images_data, user):
+        if not isinstance(images_data, list):
+            return
+        for img in images_data:
+            sha256 = img.get('sha256')
+            url = img.get('url')
+            if not sha256:
+                continue
+                
+            img_bank, created = ImageBank.objects.get_or_create(
+                sha256=sha256,
+                defaults={
+                    'original_filename': img.get('original_filename', ''),
+                    'mime_type': 'image/jpeg',
+                    'width_pt': img.get('width_pt'),
+                    'height_pt': img.get('height_pt')
+                }
+            )
+            
+            if url and (created or not img_bank.image_file or not img_bank.image_file.name.startswith('http')):
+                img_bank.image_file.name = url
+                img_bank.save()
+
+            QuestionImage.objects.create(
+                question=question,
+                image=img_bank,
+                placement=img.get('placement', 'stem'),
+                position=int(img.get('position', 0)),
+                source_type=img.get('source_type', 'user_upload'),
+                uploaded_by=user,
+                note=img.get('note', '')
+            )
 
 
 class QuizQuestionSerializer(serializers.ModelSerializer):

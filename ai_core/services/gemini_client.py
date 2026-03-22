@@ -10,7 +10,7 @@ except Exception:
     django_cache = None
 
 API_KEY = os.environ.get('GEMINI_API_KEY')
-DEFAULT_MODEL = os.environ.get('GEMINI_MODEL_NAME', 'gemini-2.0-flash')
+DEFAULT_MODEL = os.environ.get('GEMINI_MODEL_NAME', 'gemini-3.1-flash-lite-preview')
 _EMBED_MODEL = os.environ.get('GEMINI_EMBED_MODEL', 'gemini-embedding-001')
 EMBED_CACHE_TTL = int(os.environ.get('GEMINI_EMBED_CACHE_TTL', '21600'))
 
@@ -88,10 +88,13 @@ def embed_content(
     return vector
 
 
-def upload_file(path: str):
+def upload_file(path: str, mime_type: str | None = None):
     if _client is None:
         raise ValueError('GEMINI_API_KEY is not configured.')
-    return _client.files.upload(file=path)
+    kwargs = {'file': path}
+    if mime_type:
+        kwargs['config'] = {'mime_type': mime_type}
+    return _client.files.upload(**kwargs)
 
 
 def delete_file(file_name: str) -> None:

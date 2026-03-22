@@ -1,133 +1,101 @@
-# Tong hop API Question + Images + AI
+# Tổng hợp API Question + Images + AI (Pipeline Mới)
 
-Tai lieu nay tong hop cac API lien quan den ngan hang cau hoi va quan ly nhieu hinh anh cho cau hoi.
+Tài liệu này tổng hợp các API liên quan đến ngân hàng câu hỏi và quản lý hình ảnh, được thiết kế lại (Refactored) để tối ưu với kiến trúc Serverless trên Vercel, giảm thiểu số lượng Request (Round-trips) và giới hạn Payload 4.5MB.
 
-## 1. Question Bank APIs
+## 1. Kiến trúc Request-Response Mới (Bulk / Single-Shot) ⚡
 
-### GET /api/exams/questions/
+Thay vì quá trình tạo câu hỏi bị phân mảnh thành nhiều API calls (Tạo câu hỏi -> Upload ảnh 1 -> Upload ảnh 2 -> Link ảnh), hệ thống giờ đây ưu tiên mô hình **Client-Side Upload & Single-Shot Save**:
+1. **Frontend tải ảnh trực tiếp lên Cloudinary** (bỏ qua Vercel) để nhận URL và tính SHA-256 nội bộ.
+2. **Frontend gom đúc toàn bộ dữ liệu** (Câu hỏi + Các đáp án + Danh sách ảnh đã có URL Cloudinary) thành một cục JSON duy nhất.
+3. **Frontend gọi 1 API POST duy nhất** tới Vercel. Backend sẽ tự động Transaction: lưu Question, lưu Options, và lưu/link QuestionImages vào ImageBank trong 1 lần chạy.
 
-- Muc dich: Lay danh sach cau hoi (co filter).
-- Quyen: Teacher/Admin.
-- Query params:
-  - subject
-  - difficulty
-  - question_type
-  - search
-- Response moi co `question_images`.
+---
 
-### POST /api/exams/questions/
+## 2. Question Bank APIs (Cập nhật)
 
-- Muc dich: Tao cau hoi moi.
-- Quyen: Teacher/Admin.
-- Body JSON (co ban):
+### GET `/api/exams/questions/`
+- **Mục đích:** Lấy danh sách câu hỏi (có filter và pagination).
+- **Quyền:** Teacher/Admin.
+- **Query params:** `subject`, `difficulty`, `question_type`, `search`
+- **Response:** Danh sách câu hỏi kèm theo options và mảng `question_images`.
 
+### POST `/api/exams/questions/` (Tạo Câu Hỏi Toàn Diện)
+- **Mục đích:** Tạo câu hỏi mới kèm theo TẤT CẢ options và images trong một request duy nhất.
+- **Quyền:** Teacher/Admin.
+- **Body JSON:**
 ```json
 {
   "subject": 1,
-  "difficulty": "medium",
+  "difficulty": "medium", 
   "question_type": "multiple_choice",
-  "text": "Noi dung cau hoi",
-  "context": "",
-  "correct_answer_text": ""
+  "text": "Nội dung câu hỏi ở đây...",
+  "context": "Context nếu có...",
+  "correct_answer_text": "",
+  "options": [
+    {"text": "Đáp án A", "is_correct": true},
+    {"text": "Đáp án B", "is_correct": false}
+  ],
+  "question_images": [
+    {
+      "sha256": "hex_sha256...",
+      "url": "https://res.cloudinary.com/...", // Đã tự upload ở Frontend
+      "placement": "stem",
+      "position": 0,
+      "source_type": "user_upload",
+      "width_pt": 150, // Tuỳ chọn
+      "height_pt": 50 // Tuỳ chọn
+    }
+  ]
 }
 ```
 
-### GET /api/exams/questions/{id}/
+### PUT `/api/exams/questions/{id}/update-full/`
+- **Mục đích:** Cập nhật toàn diện câu hỏi (thay thế/sửa options, thêm bớt ảnh).
+- **Quyền:** Teacher/Admin.
+- Cách hoạt động tương tự như POST, backend sẽ xoá/update các relation JSON mảng phụ để đồng bộ khớp với payload truyền lên.
 
-- Muc dich: Lay chi tiet cau hoi (gom options + question_images).
-- Quyen: Teacher/Admin.
+### DELETE `/api/exams/questions/{id}/`
+- **Mục đích:** Xóa 1 câu hỏi cụ thể cùng các mảng phụ (ảnh và options). `ImageBank` gốc không xoá (để tái sử dụng).
+- **Quyền:** Teacher/Admin.
 
-### PUT /api/exams/questions/{id}/update-full/
+### POST `/api/exams/questions/bulk-delete/`
+- **Mục đích:** Xóa nhiều câu hỏi.
 
-- Muc dich: Cap nhat day du cau hoi + options.
-- Quyen: Teacher/Admin.
+---
 
-### DELETE /api/exams/questions/{id}/
+## 3. Question Image APIs (Chỉ dùng khi cần thiết)
 
-- Muc dich: Xoa 1 cau hoi.
-- Quyen: Teacher/Admin.
+Do đã gộp vào Payload chính của Question, các API rời rạc này chỉ nên dùng cho các tác vụ thay đổi siêu nhỏ (Ví dụ: Thầy cô chỉ muốn xoá một cái ảnh khỏi câu hỏi mà không muốn save lại toàn bộ form).
 
-### POST /api/exams/questions/bulk-delete/
+### POST `/api/exams/questions/images/upload/` (Deprecated/Ít dùng)
+- **Mục đích cũ:** Upload file qua Vercel. 
+- Vercel giới hạn 4.5MB nên API này rất dễ chết nếu file lớn. Khuyến khích đổi sang tự ném file file lên Cloudinary bằng JS frontend, rồi dùng Endpoint Update-Full.
 
-- Muc dich: Xoa nhieu cau hoi.
-- Quyen: Teacher/Admin.
-- Body JSON:
+### DELETE `/api/exams/questions/{id}/images/{qimg_id}/`
+- **Mục đích:** Gỡ liên kết 1 ảnh cụ thể khỏi câu hỏi. Nhanh và tiện lợi khi edit trên form.
 
-```json
-{
-  "ids": [11, 12, 13]
-}
-```
+---
 
-## 2. Question Image APIs (Moi)
+## 4. AI APIs (Tối ưu Serverless)
 
-### POST /api/exams/questions/images/upload/
+### POST `/api/ai/generate/extract-file/`
+- **Mục đích:** Trích xuất câu hỏi từ file.
+- **Cơ chế mới:** 
+  - File DOCX/PDF lớn -> Frontend tự upload file này ẩn lên Cloudinary.
+  - Frontend truyền JSON `{"file_url": "https://res.cloudinary..."}` cho API này.
+  - Vercel tải từ Cloudinary rớt xuống `/tmp` (Bypass 4.5MB), phân giải bằng `gemini-1.5-flash` Single-Shot 8192 output tokens.
+  - Trả về JSON Draft Array.
 
-- Muc dich: Upload anh vao ImageBank theo SHA-256 va co the link truc tiep vao question.
-- Quyen: Teacher/Admin.
-- Content-Type: multipart/form-data.
-- Form fields:
-  - image hoac file (bat buoc)
-  - question_id (khong bat buoc, neu muon link ngay)
-  - source_type: ai_scan | user_upload | system
-  - placement: stem, choice_0, choice_1...
-  - position: so thu tu
-  - note: ghi chu
-- Response:
+### POST `/api/ai/generate/from-rag/`
+- **Mục đích:** Sinh câu hỏi từ RAG (Thư viện tri thức).
 
-```json
-{
-  "sha256": "...",
-  "url": "http://.../media/questions/images/bank/...",
-  "image_bank_created": true,
-  "question_image_id": 99,
-  "source_type": "user_upload"
-}
-```
+### POST `/api/ai/generate/save-bulk/`
+- **Mục đích:** Lưu hàng loạt câu hỏi AI trích xuất (Drafts) vào Database thực sự.
+- Tương thích hoàn toàn với cấu trúc mảng `content_json` có chứa các Node hình ảnh JSON. Backend tự tạo ImageBank nếu Sha256 chưa tồn tại.
 
-### POST /api/exams/questions/{id}/images/link/
+---
 
-- Muc dich: Gan anh co san (theo SHA-256) vao cau hoi.
-- Quyen: Teacher/Admin.
-- Body JSON:
-
-```json
-{
-  "sha256": "hex_sha256",
-  "source_type": "ai_scan",
-  "placement": "stem",
-  "position": 0,
-  "note": "anh tu AI"
-}
-```
-
-### DELETE /api/exams/questions/{id}/images/{qimg_id}/
-
-- Muc dich: Go lien ket anh khoi cau hoi.
-- Quyen: Teacher/Admin.
-- Luu y: Khong xoa anh goc trong ImageBank.
-
-## 3. AI APIs lien quan anh + cau hoi
-
-### POST /api/ai/generate/extract-file/
-
-- Muc dich: Trich xuat cau hoi tu file bang AI.
-- Quyen: Teacher/Admin.
-
-### POST /api/ai/generate/from-rag/
-
-- Muc dich: Sinh cau hoi tu RAG.
-- Quyen: Teacher/Admin.
-
-### POST /api/ai/generate/save-bulk/
-
-- Muc dich: Luu nhieu cau hoi AI da duoc duyet vao DB.
-- Quyen: Teacher/Admin.
-- Ho tro quet `content_json` co block image va link sang `QuestionImage` voi `source_type=ai_scan`.
-
-## 4. Dinh dang du lieu anh trong Question
-
-Trong response Question:
+## 5. Dữ liệu Response chuẩn cho Ảnh trong Question
 
 ```json
 {
@@ -138,32 +106,28 @@ Trong response Question:
       "id": 10,
       "image": {
         "sha256": "...",
-        "image_url": "http://...",
+        "image_url": "https://res.cloudinary.com/...",
         "original_filename": "hinh1.png",
-        "mime_type": "image/png",
-        "file_size": 12345,
-        "width_pt": null,
-        "height_pt": null,
-        "created_at": "2026-03-19T..."
+        "mime_type": "image/png"
       },
       "position": 0,
       "placement": "stem",
-      "source_type": "user_upload",
-      "uploaded_by": 5,
-      "uploaded_by_username": "teacher01",
-      "note": "...",
-      "created_at": "2026-03-19T..."
+      "source_type": "ai_scan"
     }
   ]
 }
 ```
 
-## 5. Goi y frontend
+## 6. Lời khuyên Workflow cho Frontend
 
-- Neu nguoi dung dang tao cau hoi moi:
-  - Buoc 1: POST /questions/ de tao cau hoi.
-  - Buoc 2: Upload/link anh qua APIs moi.
-- Neu edit cau hoi:
-  - Lay GET /questions/{id}/ de hien thi danh sach anh da gan.
-  - Cho phep unlink rieng tung anh bang DELETE /questions/{id}/images/{qimg_id}/.
-- Metadata `placement` va `position` giup render dung vi tri anh trong giao dien.
+* **Luồng TẠO MỚI/EDIT Thủ công:**
+  1. Người dùng kéo thả ảnh vào Editor/Form.
+  2. Javascript bắt file ảnh, gọi API tới `https://api.cloudinary.com/v1_1/YOUR_CLOUD/image/upload` với file đính kèm. Nhận về URL.
+  3. Khi bấm "Lưu câu hỏi", Javascript build cục JSON khổng lồ chứa text và các Object ảnh mang URL kia. Bắn phát POST/PUT 1 lần duy nhất vào Backend.
+* **Luồng TRÍCH XUẤT AI:**
+  1. Người dùng chọn file DOCX > 5MB.
+  2. Javascript tải thẳng lên Cloudinary lấy URL.
+  3. Gọi `/api/ai/generate/extract-file/` với cái URL đó.
+  4. Duyệt kết quả bảng hiển thị.
+  5. Bấm "Lưu các câu đã chọn" -> Javascript gọi `/api/ai/generate/save-bulk/` gửi toàn bộ Array 1 lần. 
+  6. Backend giải quyết việc tạo Model và Link DB trong nháy mắt.

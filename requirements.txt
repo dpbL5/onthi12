@@ -16,3 +16,4 @@ pillow==12.1.1
 requests==2.32.5
 tqdm==4.67.3
 whitenoise==6.9.0
+python-docx==1.2.0

@@ -378,8 +378,11 @@ class AIGeneratorService:
             return ''
         parts = []
         for b in blocks:
-            if isinstance(b, dict) and b.get('type') == 'text' and isinstance(b.get('value'), str):
-                parts.append(b.get('value'))
+            if isinstance(b, dict):
+                if b.get('type') == 'text' and isinstance(b.get('value'), str):
+                    parts.append(b.get('value'))
+                elif b.get('type') == 'image' and b.get('sha256'):
+                    parts.append(f"\n[IMAGE_PLACEHOLDER:{b.get('sha256')}]\n")
         return ' '.join(parts).strip()
 
     @staticmethod
@@ -716,7 +719,7 @@ class AIGeneratorService:
     # ─── 1. Trích xuất từ file (PDF, Docx, Ảnh) ──────────────────────────
 
     @classmethod
-    def extract_from_file(cls, file_path: str, mime_type: str = None) -> List[Dict[str, Any]]:
+    def extract_from_file(cls, file_path: str, mime_type: str = None, subject_name: str = "") -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
         """
         Trích xuất câu hỏi từ file — hỗ trợ 3 dạng THPT 2025.
         """
@@ -725,13 +728,14 @@ class AIGeneratorService:
 
         print(f"--- STARTING AI EXTRACTION FROM FILE: {file_path} ---")
         ext = os.path.splitext(file_path)[1].lower()
+        images_map = {}
 
         try:
             t0 = time.perf_counter()
             if ext == '.docx':
-                response = cls._extract_docx(file_path)
+                response, images_map = cls._extract_docx(file_path, subject_name=subject_name)
             else:
-                response = cls._extract_generic(file_path)
+                response = cls._extract_generic(file_path, subject_name=subject_name)
             t_extract = time.perf_counter()
 
             print(f"Gemini response received (model={FILE_EXTRACTION_MODEL}). Parsing...")
@@ -778,16 +782,18 @@ class AIGeneratorService:
                 f"normalize={t_normalize - t_parse:.2f}s, "
                 f"total={t_normalize - t0:.2f}s"
             )
-            print(f"Extracted {len(normalized)} questions successfully.")
-            return normalized
+            print(f"Extracted {len(normalized)} questions successfully. Found {len(images_map)} images.")
+            return normalized, images_map
         except Exception as e:
             print(f"ERROR in extract_from_file: {str(e)}")
             raise e
 
     @classmethod
-    def _extract_docx(cls, file_path: str):
+    def _extract_docx(cls, file_path: str, subject_name: str = ""):
         """
-        Trích xuất câu hỏi từ DOCX bằng 1 request duy nhất (Single-shot) để tiết kiệm token và có context tốt.
+        Trích xuất câu hỏi từ DOCX.
+        - File nhỏ (<= SINGLE_SHOT_THRESHOLD blocks): 1 lần gọi Gemini.
+        - File lớn: chia chunks -> gọi nhiều lần -> trả về FakeResponse gộp.
         """
         from .docx_parser import DocxNativeParser
 
@@ -796,20 +802,86 @@ class AIGeneratorService:
             content_blocks = DocxNativeParser.parse_docx(file_path)
             print(f"Parsed {len(content_blocks)} content blocks from DOCX.")
 
+            # Create an images_map from all image blocks correctly parsed
+            images_map = {
+                b['sha256']: b['url'] 
+                for b in content_blocks 
+                if b.get('type') == 'image' and b.get('sha256') and b.get('url')
+            }
+
             compact_blocks = cls._compact_blocks_for_prompt(content_blocks, max_blocks=MAX_BLOCKS_EXTRACTION)
             print(f"Compacted to {len(compact_blocks)} blocks (removed url fields).")
 
-            # --- Single-shot path ---
-            blocks_json_str = json.dumps(compact_blocks, ensure_ascii=False)
-            content_parts = [EXTRACTION_PROMPT]
-            content_parts.append(
-                f"MÃ NGUỒN DOCX DƯỚI DẠNG CONTENT BLOCKS:\n{blocks_json_str}"
-            )
-            return gemini_client.generate_content(
-                content_parts,
-                model=FILE_EXTRACTION_MODEL,
-                config=GENERATION_CONFIG_JSON_STRICT,
-            )
+            # --- 4-Chunk Path ---
+            import math
+            import concurrent.futures
+
+            total = len(compact_blocks)
+            if total <= 4:
+                n_chunks = 1
+                chunks = [compact_blocks]
+            else:
+                n_chunks = 4
+                chunk_size = math.ceil(total / n_chunks)
+                chunks = [compact_blocks[i:i + chunk_size] for i in range(0, total, chunk_size)]
+                n_chunks = len(chunks)
+
+            print(f"[chunked] Splitting {total} blocks into {n_chunks} chunks.")
+
+            all_questions_raw = []
+
+            def process_chunk(idx, chunk):
+                chunk_num = idx + 1
+                t_chunk_start = time.perf_counter()
+                
+                blocks_json_str = json.dumps(chunk, ensure_ascii=False)
+                prompt_chunk = (
+                    f"Đây là PHẦN {chunk_num}/{n_chunks} của tài liệu DOCX.\n"
+                    f"Môn học liên quan: {subject_name if subject_name else 'Tự động nhận diện'}.\n"
+                    f"YÊU CẦU BẮT BUỘC: Trích xuất TẤT CẢ câu hỏi trong phần này.\n"
+                    f"Nếu phần này không chứa câu hỏi hoàn chỉnh, chỉ chứa đáp án thì cố gắng gom vào câu hỏi trước đó hoặc trả về mảng rỗng [].\n\n"
+                    f"MÃ NGUỒN CONTENT BLOCKS (PHẦN {chunk_num}/{n_chunks}):\n{blocks_json_str}"
+                )
+                content_parts = [EXTRACTION_PROMPT, prompt_chunk]
+                
+                try:
+                    response = gemini_client.generate_content(
+                        content_parts,
+                        model=FILE_EXTRACTION_MODEL,
+                        config=GENERATION_CONFIG_JSON_STRICT,
+                    )
+                    chunk_questions = cls._parse_gemini_json(response.text)
+                    t_chunk_end = time.perf_counter()
+                    print(
+                        f"[chunked] Chunk {chunk_num}/{n_chunks}: "
+                        f"Found {len(chunk_questions)} questions in {t_chunk_end - t_chunk_start:.1f}s"
+                    )
+                    return chunk_questions
+                except Exception as e:
+                    print(f"[chunked] Chunk {chunk_num}/{n_chunks} FAILED: {e}. Skipping.")
+                    return []
+
+            if n_chunks == 1:
+                res = process_chunk(0, chunks[0])
+                if res:
+                    all_questions_raw.extend(res)
+            else:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                    future_to_chunk = {executor.submit(process_chunk, i, chunk): i for i, chunk in enumerate(chunks)}
+                    results = [None] * n_chunks
+                    for future in concurrent.futures.as_completed(future_to_chunk):
+                        i = future_to_chunk[future]
+                        results[i] = future.result()
+                
+                for res in results:
+                    if res:
+                        all_questions_raw.extend(res)
+
+            class _FakeResponse:
+                def __init__(self, questions):
+                    self.text = json.dumps(questions, ensure_ascii=False)
+
+            return _FakeResponse(all_questions_raw), images_map
 
         except Exception as e:
             print(f"DOCX extraction failed: {e}")
@@ -818,7 +890,7 @@ class AIGeneratorService:
 
 
     @classmethod
-    def _extract_generic(cls, file_path: str):
+    def _extract_generic(cls, file_path: str, subject_name: str = ""):
         """Xử lý PDF bằng PyMuPDF (Render thành ảnh), hoặc ảnh thông thường."""
         ext = os.path.splitext(file_path)[1].lower()
         uploaded_images = []
@@ -853,6 +925,8 @@ class AIGeneratorService:
                     uploaded_images.append(uploaded)
                     
                 content_parts = [EXTRACTION_PROMPT_GENERIC]
+                if subject_name:
+                    content_parts.append(f"Môn học liên quan: {subject_name}\n")
                 content_parts.append(f"\nTÀI LIỆU PDF {len(uploaded_images)} TRANG ĐÃ ĐƯỢC CHUYỂN THÀNH ẢNH SAU ĐÂY. "
                                      f"VUI LÒNG ĐỌC VÀ BÓC TÁCH CÂU HỎI:")
                 content_parts.extend(uploaded_images)
@@ -868,8 +942,11 @@ class AIGeneratorService:
                 print(f"Uploading generic image {file_path} to Gemini File API...")
                 uploaded_file = gemini_client.upload_file(path=file_path)
                 uploaded_images.append(uploaded_file)
+                prompt_parts = [uploaded_file, EXTRACTION_PROMPT_GENERIC]
+                if subject_name:
+                    prompt_parts.append(f"\nMôn học liên quan: {subject_name}")
                 return gemini_client.generate_content(
-                    [uploaded_file, EXTRACTION_PROMPT_GENERIC],
+                    prompt_parts,
                     model=FILE_EXTRACTION_MODEL,
                     config=GENERATION_CONFIG_JSON_STRICT,
                 )
@@ -965,3 +1042,138 @@ class AIGeneratorService:
         if normalized:
             cache.set(cache_key, normalized, timeout=RAG_CACHE_TTL_SECONDS)
         return normalized
+
+    @classmethod
+    def ingest_document(cls, file_path: str, document_id: int) -> Dict[str, Any]:
+        """
+        Trích xuất văn bản từ tài liệu, chia thành các chunk, nhúng vector và lưu vào DocumentChunk.
+        """
+        from ai_core.models import Document, DocumentChunk
+        import os
+        
+        doc = Document.objects.get(id=document_id)
+        ext = os.path.splitext(file_path)[1].lower()
+        
+        content_text = ""
+        questions = []
+        
+        print(f"--- STARTING INGEST DOCUMENT FOR RAG: {file_path} ---")
+        
+        try:
+            # 1. Trích xuất text để làm RAG chunks
+            if ext == '.docx':
+                from .docx_parser import DocxNativeParser
+                blocks = DocxNativeParser.parse_docx(file_path)
+                content_text = cls._blocks_to_text(blocks)
+            elif ext == '.pdf':
+                import fitz
+                doc_pdf = fitz.open(file_path)
+                for page_num in range(len(doc_pdf)):
+                    page = doc_pdf.load_page(page_num)
+                    content_text += page.get_text() + "\n"
+                doc_pdf.close()
+            else:
+                raise ValueError("Định dạng file không hỗ trợ cho AI Tutor RAG.")
+                
+            # 2. Chunking
+            if not content_text.strip():
+                return {"knowledge_chunks_count": 0, "questions": []}
+                
+            chunks = []
+            paragraphs = [p.strip() for p in content_text.split('\n') if p.strip()]
+            current_chunk = ""
+            
+            for p in paragraphs:
+                if len(current_chunk) + len(p) < RAG_MAX_CHUNK_CHARS:
+                    current_chunk += p + "\n"
+                else:
+                    if current_chunk:
+                        chunks.append(current_chunk.strip())
+                    if len(p) >= RAG_MAX_CHUNK_CHARS:
+                        words = p.split()
+                        temp_chunk = ""
+                        for w in words:
+                            if len(temp_chunk) + len(w) < RAG_MAX_CHUNK_CHARS:
+                                temp_chunk += w + " "
+                            else:
+                                chunks.append(temp_chunk.strip())
+                                temp_chunk = w + " "
+                        current_chunk = temp_chunk
+                    else:
+                        current_chunk = p + "\n"
+                        
+            if current_chunk.strip():
+                chunks.append(current_chunk.strip())
+                
+            # 3. Embed & Save chunks
+            from . import gemini_client
+            for idx, chunk_text in enumerate(chunks):
+                if not chunk_text.strip(): continue
+                try:
+                    embedding = gemini_client.embed_content(
+                        content=chunk_text,
+                        task_type="RETRIEVAL_DOCUMENT",
+                        output_dimensionality=768
+                    )
+                    DocumentChunk.objects.create(
+                        document=doc,
+                        chunk_index=idx,
+                        content=chunk_text,
+                        embedding=embedding
+                    )
+                except Exception as e:
+                    print(f"Error embedding chunk {idx}: {e}")
+                    
+            return {
+                "knowledge_chunks_count": len(chunks),
+                "questions": questions
+            }
+        except Exception as e:
+            print(f"Error in ingest_document: {e}")
+            raise
+
+    @classmethod
+    def chat_with_tutor(cls, class_id: str, question: str) -> str:
+        """
+        Chatbot AI Tutor với context từ DocumentChunks (RAG).
+        """
+        from ai_core.models import DocumentChunk
+        from pgvector.django import L2Distance
+        from . import gemini_client
+        
+        # 1. Embed câu hỏi
+        query_embedding = gemini_client.embed_content(
+            content=question,
+            task_type="RETRIEVAL_QUERY",
+            output_dimensionality=768,
+            use_cache=True,
+        )
+        
+        # 2. Lọc chunks liên quan
+        top_k = 8
+        closest_chunks = (
+            DocumentChunk.objects.filter(document__classroom_id=class_id)
+            .annotate(distance=L2Distance('embedding', query_embedding))
+            .order_by('distance')[:top_k]
+        )
+        
+        context_text = cls._build_rag_context(list(closest_chunks))
+        
+        if not context_text.strip():
+            return "Xin lỗi, hiện tại lớp học chưa có tài liệu nào để AI Tutor tham khảo."
+            
+        # 3. Gọi Gemini
+        prompt = f"""
+Bạn là AI Tutor - Trợ giảng ảo của NVH Learning cho lớp học này.
+Nhiệm vụ: Trả lời câu hỏi của học sinh dựa trên KIẾN THỨC NỘI BỘ dưới đây.
+Nếu kiến thức nội bộ không chứa thông tin để trả lời, hãy nói rõ là bạn chưa được cung cấp tài liệu về vấn đề này. KHÔNG tự bịa thông tin bên ngoài.
+
+KIẾN THỨC NỘI BỘ:
+{context_text}
+
+CÂU HỎI CỦA HỌC SINH: {question}
+
+TRẢ LỜI (Trình bày rõ ràng, thân thiện, dùng markdown):
+"""
+        response = gemini_client.generate_content(prompt, model=RAG_GENERATION_MODEL)
+        return response.text

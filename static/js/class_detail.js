@@ -373,7 +373,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const fd = new FormData(); fd.append('file', file);
         try {
             const res = await fetch(`/api/ai/classes/${classId}/documents/upload/`, {method:'POST',headers:{'Authorization':'Bearer '+token},body:fd});
-            if (res.ok) { showGlobalAlert('Tải lên tài liệu thành công!', 'success'); await loadRAGDocuments(); }
+            if (res.ok) { 
+                const data = await res.json();
+                const qCount = data.questions_extracted || 0;
+                let msg = 'Tải lên tài liệu thành công!';
+                if (qCount > 0) msg += ` AI đã nhận diện được ${qCount} câu hỏi dạng THPT 2025.`;
+                showGlobalAlert(msg, 'success'); 
+                await loadRAGDocuments(); 
+            }
             else { const err = await res.json(); alert("Lỗi: " + (err.error || "Không thể nạp tài liệu.")); }
         } catch(err) { alert("Lỗi kết nối."); }
         finally { if (indicator) indicator.style.display = 'none'; e.target.value = ''; }
