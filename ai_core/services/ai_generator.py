@@ -7,7 +7,7 @@ import uuid
 import re
 import time
 import hashlib
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from django.conf import settings
 from django.core.cache import cache
 from . import gemini_client
