@@ -21,7 +21,7 @@ FILE_EXTRACTION_MODEL = os.environ.get('AI_EXTRACTION_MODEL_NAME', 'gemini-flash
 GENERATION_CONFIG_JSON_STRICT = {
     'response_mime_type': 'application/json',
     'temperature': 0.1,
-    'max_output_tokens': 10000,
+    'max_output_tokens': 65000,
 }
 
 GENERATION_CONFIG_RAG = {
