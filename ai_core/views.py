@@ -23,64 +23,19 @@ from rest_framework import permissions
 from exams.models import Question, Option, Quiz, QuizQuestion
 from exams.views import IsTeacherOrAdmin
 from .services.ai_generator import AIGeneratorService
-from .services import gemini_client
+from .services.ai_provider import get_client
 from django.utils import timezone
 from datetime import timedelta
 
-AI_TUTOR_MODEL = os.environ.get('AI_TUTOR_MODEL_NAME', 'gemma-3-4b-it')
-AI_EXTRACTION_MODEL = os.environ.get('AI_EXTRACTION_MODEL_NAME', 'gemini-flash-latest')
+AI_TUTOR_MODEL = os.environ.get('AI_TUTOR_MODEL_NAME', 'gpt-4.1')
+AI_EXTRACTION_MODEL = os.environ.get('AI_EXTRACTION_MODEL_NAME', 'gpt-4.1')
+ai_client = get_client()
 
 class RAGChatbotView(APIView):
     """
     API Chatbot sử dụng kiến trúc RAG tích hợp file docx giảng dạy của nhà trường.
     """
     permission_classes = [IsAuthenticated]
-
-    CHAT_CONTEXT_MAX_CHARS = 3200
-    CHAT_CHUNK_MAX_CHARS = 600
-    CHAT_RESPONSE_CACHE_TTL = 180
-
-    @staticmethod
-    def _compact_text(text, max_chars=600):
-        if not text:
-            return ''
-        compact = re.sub(r'\s+', ' ', str(text)).strip()
-        if len(compact) <= max_chars:
-            return compact
-        return compact[: max_chars - 3].rstrip() + '...'
-
-    @classmethod
-    def _build_context_and_sources(cls, chunks):
-        contexts = []
-        sources = []
-        seen_doc_titles = set()
-        seen_snippets = set()
-        total_chars = 0
-
-        for chunk in chunks:
-            snippet = cls._compact_text(chunk.content, max_chars=cls.CHAT_CHUNK_MAX_CHARS)
-            if not snippet:
-                continue
-
-            dedupe_key = snippet[:180].lower()
-            if dedupe_key in seen_snippets:
-                continue
-            seen_snippets.add(dedupe_key)
-
-            doc_title = chunk.document.title
-            line = f"Tài liệu [{doc_title}]: {snippet}"
-            projected = total_chars + len(line)
-            if contexts and projected > cls.CHAT_CONTEXT_MAX_CHARS:
-                break
-
-            contexts.append(line)
-            total_chars = projected
-
-            if doc_title not in seen_doc_titles:
-                seen_doc_titles.add(doc_title)
-                sources.append({"doc": doc_title})
-
-        return "\n\n---\n\n".join(contexts), sources
 
     @staticmethod
     def _make_chat_cache_key(class_id, question):
@@ -89,8 +44,8 @@ class RAGChatbotView(APIView):
         return f"ai_tutor:chat:{digest}"
 
     def post(self, request):
-        if not gemini_client.is_configured():
-            return Response({"error": "Chưa cấu hình GEMINI_API_KEY trên server."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        if not ai_client.is_configured():
+            return Response({"error": "Chưa cấu hình AI API key trên server."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         class_id = request.data.get('class_id')
         question = request.data.get('question')
@@ -137,7 +92,7 @@ class RAGChatbotView(APIView):
                 "answer": chatbot_answer,
                 "sources": [{"doc": "Kiến thức nội bộ lớp học"}]
             }
-            cache.set(response_cache_key, payload, timeout=self.CHAT_RESPONSE_CACHE_TTL)
+            cache.set(response_cache_key, payload, timeout=180)
 
             return Response(payload)
 
@@ -224,7 +179,7 @@ YÊU CẦU BÁO CÁO:
 
 BÁO CÁO:
 """
-            response = gemini_client.generate_content(system_prompt)
+            response = ai_client.generate_content(system_prompt)
 
             # Cập nhật đè lên database
             insight, created = ClassInsight.objects.update_or_create(
@@ -292,7 +247,7 @@ class UploadClassDocumentView(APIView):
             doc_obj = Document.objects.create(
                 classroom=classroom,
                 title=file_obj.name,
-                file_path=file_obj.name
+                file=file_obj
             )
 
             try:

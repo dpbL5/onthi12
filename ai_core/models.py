@@ -6,18 +6,18 @@ class Document(models.Model):
     """A document uploaded for a specific class to be used by AI."""
     classroom = models.ForeignKey(Class, on_delete=models.CASCADE, related_name='documents')
     title = models.CharField(max_length=255)
-    file_path = models.CharField(max_length=500, null=True, blank=True)
+    file = models.FileField(upload_to='documents/', null=True, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return self.title
 
 class DocumentChunk(models.Model):
-    """A chunk of text from a document, embedding via Gemini."""
+    """A chunk of text from a document, embedding via AI provider."""
     document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name='chunks')
     chunk_index = models.IntegerField()
     content = models.TextField()
-    # 768 dimensions — matches output_dimensionality used by models/gemini-embedding-001
+    # 768 dimensions — matches output_dimensionality used by default embedding model
     embedding = VectorField(dimensions=768, null=True, blank=True)
 
     class Meta:
