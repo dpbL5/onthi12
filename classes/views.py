@@ -1,6 +1,9 @@
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_headers
 
 from .models import Class, ClassStudent, Subject
 from .serializers import ClassSerializer, SubjectSerializer
@@ -42,6 +45,8 @@ class SubjectDetailView(generics.RetrieveUpdateDestroyAPIView):
         return super().destroy(request, *args, **kwargs)
 
 
+@method_decorator(cache_page(60 * 15), name='dispatch')
+@method_decorator(vary_on_headers('Authorization'), name='dispatch')
 class ClassListCreateView(generics.ListCreateAPIView):
     serializer_class = ClassSerializer
     permission_classes = [permissions.IsAuthenticated]

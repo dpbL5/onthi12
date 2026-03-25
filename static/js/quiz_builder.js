@@ -230,6 +230,16 @@ async function init() {
     }
 }
 
+function showInitError(msg) {
+    const loading = document.getElementById('loadingQuiz');
+    if (loading) {
+        loading.innerHTML = `<div class="alert alert-danger mx-auto" style="max-width:500px">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i> ${msg}
+            <div class="mt-3"><button class="btn btn-sm btn-outline-danger" onclick="location.reload()">Thử lại</button></div>
+        </div>`;
+    }
+}
+
 async function loadQuizData() {
     const res = await fetch(`/api/exams/${quizId}/`, { headers: authHeaders() });
     if (res.status === 401) {
@@ -381,8 +391,20 @@ function renderSelectedQuestions() {
     document.getElementById('totalPoints').textContent = selectedQuestions.length > 0 ? 10 : 0;
 }
 
-async function loadQuestionBank() {
-    const res = await fetch('/api/exams/questions/', { headers: authHeaders() });
+let qbCurrentPage = 1;
+
+async function loadQuestionBank(page = 1) {
+    qbCurrentPage = page;
+    const term = document.getElementById('bankSearch').value.toLowerCase();
+    
+    // We'll use the same API with page param
+    let url = `/api/exams/questions/?page=${page}`;
+    if (term) url += `&search=${encodeURIComponent(term)}`;
+    if (quizData && quizData.subject_id) {
+        url += `&subject=${quizData.subject_id}`;
+    }
+
+    const res = await fetch(url, { headers: authHeaders() });
     if (res.status === 401) {
         window.location.href = '/login/';
         return;
@@ -393,12 +415,49 @@ async function loadQuestionBank() {
     const data = await res.json();
     questionBank = normalizeListResponse(data);
     renderQuestionBank(questionBank);
+    renderQbPagination(data);
 }
 
+function renderQbPagination(data) {
+    const container = document.getElementById('qbPaginationContainer');
+    if (!container) return;
+    
+    if (!data.count || !data.results || Math.ceil(data.count / 20) <= 1) {
+        container.innerHTML = '';
+        container.style.display = 'none';
+        return;
+    }
+    
+    container.style.display = 'block';
+    const totalPages = Math.ceil(data.count / 20);
+    
+    let html = `
+        <div class="d-flex justify-content-between align-items-center">
+            <button class="btn btn-sm btn-outline-secondary ${!data.previous ? 'disabled' : ''}" 
+                    onclick="loadQuestionBank(${qbCurrentPage - 1})">
+                <i class="bi bi-chevron-left"></i>
+            </button>
+            <span class="small text-muted">Trang ${qbCurrentPage}/${totalPages}</span>
+            <button class="btn btn-sm btn-outline-secondary ${!data.next ? 'disabled' : ''}" 
+                    onclick="loadQuestionBank(${qbCurrentPage + 1})">
+                <i class="bi bi-chevron-right"></i>
+            </button>
+        </div>
+    `;
+    container.innerHTML = html;
+}
 
+let bankSearchTimer;
+function filterBank() {
+    clearTimeout(bankSearchTimer);
+    bankSearchTimer = setTimeout(() => {
+        loadQuestionBank(1);
+    }, 500);
+}
 
 function renderQuestionBank(questions) {
     const list = document.getElementById('questionBankList');
+    if (!list) return;
     list.innerHTML = '';
     let addedQIDs = new Set(selectedQuestions.map(qq => qq.question.id));
     
@@ -426,14 +485,6 @@ function renderQuestionBank(questions) {
         `;
         list.appendChild(item);
     });
-}
-
-function filterBank() {
-    const term = document.getElementById('bankSearch').value.toLowerCase();
-    const filtered = questionBank.filter(q =>
-        (getQuestionDisplayText(q).toLowerCase().includes(term) || (q.subject_name || '').toLowerCase().includes(term))
-    );
-    renderQuestionBank(filtered);
 }
 
 async function addQuestionToQuiz(qId) {

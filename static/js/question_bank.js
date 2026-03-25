@@ -76,11 +76,24 @@ function debounceSearch() {
     }, 500);
 }
 
-async function loadQuestions() {
+let currentPage = 1;
+let totalQuestions = 0;
+
+function normalizeListResponse(data) {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.results)) return data.results;
+    return [];
+}
+
+async function loadQuestions(page = 1) {
+    currentPage = page;
     const loading = document.getElementById('loading');
     const questionList = document.getElementById('questionList');
+    const paginationContainer = document.getElementById('paginationContainer');
+    
     loading.style.display = 'block';
     questionList.style.display = 'none';
+    if (paginationContainer) paginationContainer.innerHTML = '';
 
     // Clear selection
     selectedIds = [];
@@ -92,10 +105,13 @@ async function loadQuestions() {
         const type = document.getElementById('filterType').value;
         const search = document.getElementById('filterSearch').value;
         
-        let url = `/api/exams/questions/?subject=${sub}&difficulty=${diff}&question_type=${type}&search=${encodeURIComponent(search)}`;
+        let url = `/api/exams/questions/?page=${page}&subject=${sub}&difficulty=${diff}&question_type=${type}&search=${encodeURIComponent(search)}`;
         
         const res = await fetch(url, { headers: authHeaders() });
-        questions = await res.json();
+        const data = await res.json();
+        
+        questions = normalizeListResponse(data);
+        totalQuestions = data.count || questions.length;
         
         // Sorting: Needs review items first (client-side sort is fine for metadata)
         questions.sort((a,b) => {
@@ -107,6 +123,7 @@ async function loadQuestions() {
         });
 
         renderQuestions();
+        renderPagination(data);
     } catch(e) {
         console.error(e);
         showGlobalAlert('Lỗi tải danh sách câu hỏi', 'danger');
@@ -114,6 +131,59 @@ async function loadQuestions() {
         loading.style.display = 'none';
         questionList.style.display = 'flex';
     }
+}
+
+function renderPagination(data) {
+    const container = document.getElementById('paginationContainer');
+    if (!container || !data.count || !data.results) return;
+
+    const totalPages = Math.ceil(data.count / 20); // matching backend page_size
+    if (totalPages <= 1) return;
+
+    let html = `
+        <nav aria-label="Page navigation">
+            <ul class="pagination justify-content-center">
+                <li class="page-item ${!data.previous ? 'disabled' : ''}">
+                    <a class="page-link" href="#" onclick="loadQuestions(${currentPage - 1}); return false;" aria-label="Previous">
+                        <span aria-hidden="true">&laquo; Trang trước</span>
+                    </a>
+                </li>
+    `;
+
+    // Show a few pages around current page
+    let startPage = Math.max(1, currentPage - 2);
+    let endPage = Math.min(totalPages, currentPage + 2);
+
+    if (startPage > 1) {
+        html += `<li class="page-item"><a class="page-link" href="#" onclick="loadQuestions(1); return false;">1</a></li>`;
+        if (startPage > 2) html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+        html += `
+            <li class="page-item ${i === currentPage ? 'active' : ''}">
+                <a class="page-link" href="#" onclick="loadQuestions(${i}); return false;">${i}</a>
+            </li>
+        `;
+    }
+
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        html += `<li class="page-item"><a class="page-link" href="#" onclick="loadQuestions(${totalPages}); return false;">${totalPages}</a></li>`;
+    }
+
+    html += `
+                <li class="page-item ${!data.next ? 'disabled' : ''}">
+                    <a class="page-link" href="#" onclick="loadQuestions(${currentPage + 1}); return false;" aria-label="Next">
+                        <span aria-hidden="true">Trang sau &raquo;</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+        <div class="text-center text-muted small mt-2">Đang hiển thị trang ${currentPage} / ${totalPages} (Tổng cộng ${data.count} câu hỏi)</div>
+    `;
+
+    container.innerHTML = html;
 }
 
 let selectedIds = [];

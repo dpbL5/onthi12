@@ -1,7 +1,10 @@
-from rest_framework import generics, permissions, status
+from rest_framework import generics, permissions, status, pagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_headers
 from django.utils import timezone
 from django.db.models import Q
 from django.db import transaction
@@ -55,12 +58,20 @@ class IsTeacherOrAdminOrStudentReadOnly(permissions.BasePermission):
 
 
 
+
+class StandardResultsSetPagination(pagination.PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
 # ─── TEACHER / ADMIN: Question Bank CRUD ─────────────────────────────────────
 
 class QuestionListCreateView(generics.ListCreateAPIView):
     """Giáo viên xem ngân hàng câu hỏi và tạo mới."""
     serializer_class = QuestionSerializer
     permission_classes = [permissions.IsAuthenticated, IsTeacherOrAdmin]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         qs = (
@@ -560,6 +571,8 @@ class QuizSubmitView(APIView):
 
 # ─── ANALYTICS ───────────────────────────────────────────────────────────────
 
+@method_decorator(cache_page(60 * 15), name='dispatch')
+@method_decorator(vary_on_headers('Authorization'), name='dispatch')
 class ClassAnalyticsView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsTeacherOrAdmin]
 

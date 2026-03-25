@@ -252,7 +252,8 @@ class UploadClassDocumentView(APIView):
             doc_obj = Document.objects.create(
                 classroom=classroom,
                 title=file_obj.name,
-                file=file_obj,
+                # Note: We omit 'file=file_obj' because Vercel file system is read-only.
+                # All documents are now managed via Cloudinary (see file_url below).
                 file_url=cloudinary_res.get('secure_url') if cloudinary_res else None,
                 cloudinary_public_id=cloudinary_res.get('public_id') if cloudinary_res else None
             )
