@@ -6,10 +6,14 @@ def home_view(request):
 
 
 def login_view(request):
+    if request.user.is_authenticated:
+        return redirect('dashboard')
     return render(request, 'login.html')
 
 
 def register_view(request):
+    if request.user.is_authenticated:
+        return redirect('dashboard')
     return render(request, 'register.html')
 
 

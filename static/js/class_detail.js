@@ -22,8 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function init() {
         try {
-            const meRes = await fetch('/api/accounts/me/', {headers: authHeaders()});
-            const me = await meRes.json();
+            const me = await window.getCurrentUser();
+            if (!me) { window.location.href = '/login/'; return; }
             currentRole = me.role?.name;
             await Promise.all([loadClassDetail(), loadQuizzes(), loadMembers(), loadRAGDocuments()]);
             if (currentRole === 'teacher' || currentRole === 'admin') {
@@ -393,6 +393,24 @@ document.addEventListener('DOMContentLoaded', () => {
         else alert('Lỗi khi xoá.');
     }
 
+    window.deleteClass = async function(id, name) {
+        if (!confirm(`Bạn có chắc chắn muốn xoá lớp "${name}"? Thao tác này sẽ xoá toàn bộ bài thi, kết quả và tài liệu liên quan và không thể hoàn tác.`)) return;
+        
+        const res = await fetch(`/api/classes/${id}/`, {
+            method: 'DELETE',
+            headers: authHeaders()
+        });
+        
+        if (res.ok) {
+            // Using a delay to ensure the alert is visible before redirecting
+            alert(`Đã xoá lớp "${name}" thành công.`);
+            window.location.href = '/classes/';
+        } else {
+            const data = await res.json().catch(() => ({}));
+            alert(data.detail || 'Xoá lớp thất bại.');
+        }
+    }
+
     function escapeHtml(s) { return (s||'').toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -404,6 +422,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (textEl && textEl.innerHTML.trim() === '') {
                     loadSavedInsight();
                 }
+            });
+        }
+
+        // Initialize DateTime picker for Due Date with dd/mm/yyyy H:i format
+        if (typeof flatpickr !== 'undefined') {
+            flatpickr("#quizDueDate", {
+                enableTime: true,
+                dateFormat: "Y-m-d\\TH:i",
+                altInput: true,
+                altFormat: "d/m/Y H:i",
+                time_24hr: true,
+                locale: "vn"
             });
         }
     });

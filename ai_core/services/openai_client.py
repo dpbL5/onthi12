@@ -53,28 +53,41 @@ def generate_content(
                         "image_url": {"url": f"data:{part.mime_type};base64,{part.b64_data}"}
                     })
                 elif part.mime_type == 'application/pdf':
-                    # For PDF, the extracted text is in b64_data
                     messages_content.append({
                         "type": "text",
                         "text": f"--- FILE: {part.name} ---\n{part.b64_data}\n--- END FILE ---"
                     })
-            elif hasattr(part, 'text'): # Handle objects with .text attribute
+            elif hasattr(part, 'text'):
                 messages_content.append({"type": "text", "text": part.text})
             else:
                 messages_content.append({"type": "text", "text": str(part)})
     else:
         messages_content.append({"type": "text", "text": str(contents)})
 
-    is_o1 = selected_model.startswith("o1-") or selected_model == "o1"
+    # Prepare for new Responses API (Separating instructions from input)
+    system_instruction = ""
+    user_input = []
+    
+    for msg in messages_content:
+        if msg.get('role') == 'system':
+            system_instruction = msg.get('text', '')
+        else:
+            user_input.append(msg)
+    
+    # If no system role was found in list, check if some items were just strings
+    if not system_instruction and messages_content and messages_content[0].get('type') == 'text':
+        # Often first message can be treated as instruction if it's broad
+        # But for now we'll stick to standard message list for 'input'
+        pass
+
+    is_reasoning_model = any(selected_model.startswith(prefix) for prefix in ["o1-", "o1", "o3-", "o3", "o4-", "o4"])
     
     request_payload: Dict[str, Any] = {
         'model': selected_model,
         'messages': [{"role": "user", "content": messages_content}],
     }
 
-    # o1 models use max_completion_tokens instead of max_tokens
-    # and do not support the temperature parameter (it must be 1 or omitted)
-    if is_o1:
+    if is_reasoning_model:
         request_payload['max_completion_tokens'] = (config or {}).get('max_output_tokens', 4096)
     else:
         request_payload['max_tokens'] = (config or {}).get('max_output_tokens', 4096)
@@ -88,7 +101,23 @@ def generate_content(
     if (config or {}).get('response_mime_type') == 'application/json':
         request_payload['response_format'] = {"type": "json_object"}
 
-    response = _client.chat.completions.create(**request_payload)
+    try:
+        response = _client.chat.completions.create(**request_payload)
+    except Exception as e:
+        # If the error suggests using max_completion_tokens, retry once.
+        err_msg = str(e).lower()
+        if 'max_tokens' in err_msg and 'max_completion_tokens' in err_msg:
+            if 'max_tokens' in request_payload:
+                val = request_payload.pop('max_tokens')
+                request_payload['max_completion_tokens'] = val
+                request_payload.pop('temperature', None) # Reasoning models usually don't support temperature
+                print(f"[OpenAI] Auto-retry: switching max_tokens to max_completion_tokens for model {selected_model}")
+                response = _client.chat.completions.create(**request_payload)
+            else:
+                raise
+        else:
+            raise
+
     content_text = response.choices[0].message.content.strip()
     
     # Return an object with a .text attribute for parity with Gemini response

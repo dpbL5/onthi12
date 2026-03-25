@@ -103,3 +103,27 @@ class ClassesApiTests(APITestCase):
         self._auth("teacher_classes_2", "TeacherPass123")
         res = self.client.get(f"/api/classes/{self.classroom.id}/students/")
         self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_teacher_can_delete_own_class(self):
+        self._auth("teacher_classes", "TeacherPass123")
+        res = self.client.delete(f"/api/classes/{self.classroom.id}/")
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Class.objects.filter(id=self.classroom.id).exists())
+
+    def test_teacher_cannot_delete_other_teacher_class(self):
+        self._auth("teacher_classes_2", "TeacherPass123")
+        res = self.client.delete(f"/api/classes/{self.classroom.id}/")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(Class.objects.filter(id=self.classroom.id).exists())
+
+    def test_admin_can_delete_any_class(self):
+        self._auth("admin_classes", "AdminPass123")
+        res = self.client.delete(f"/api/classes/{self.classroom.id}/")
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Class.objects.filter(id=self.classroom.id).exists())
+
+    def test_student_cannot_delete_class(self):
+        self._auth("student_classes", "StudentPass123")
+        res = self.client.delete(f"/api/classes/{self.classroom.id}/")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(Class.objects.filter(id=self.classroom.id).exists())

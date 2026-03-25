@@ -64,6 +64,19 @@
 <!-- ── Scripts ──────────────────────────────────────────── -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<!-- EasyMDE -->
+<link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">
+<script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
+
+<!-- Shared utilities -->
+<script src="{% static 'js/question_renderer.js' %}"></script>
+
+<!-- Shared Question Editor component -->
+{% include 'components/question_editor_modal.html' %}
+<script src="{% static 'js/question_editor.js' %}"></script>
+
+<script src="{% static 'js/ai_generator.js' %}"></script>
 <script src="{% static 'js/base.js' %}"></script>
 {% block scripts %}{% endblock %}
 </body>

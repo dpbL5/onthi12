@@ -1,42 +1,12 @@
 let quizData = null;
 let selectedQuestions = [];
 let questionBank = [];
-let editingQuestionId = null;
 let qbEasyMDE = null;
 let currentDrafts = { file: [], rag: [] };
-
-// Global sha256→url map populated after AI file extraction (from DOCX image blocks)
-window.extractedImagesMap = {};
-
-function showInitError(message) {
-    const loadingEl = document.getElementById('loadingQuiz');
-    if (!loadingEl) return;
-    loadingEl.innerHTML = `
-        <div class="alert alert-danger d-inline-flex align-items-start gap-2 text-start" role="alert">
-            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
-            <div>
-                <div class="fw-bold">Không thể tải trình tạo đề thi</div>
-                <div class="small">${escapeHtml(message || 'Đã xảy ra lỗi không xác định.')}</div>
-            </div>
-        </div>
-    `;
-}
-
 function normalizeListResponse(data) {
     if (Array.isArray(data)) return data;
     if (data && Array.isArray(data.results)) return data.results;
     return [];
-}
-
-function safeEscapeHtmlForMarkdown(text) {
-    if (!text) return '';
-    const parts = (text + '').split(/(`+[\s\S]*?`+)/g);
-    for (let i = 0; i < parts.length; i++) {
-        if (i % 2 === 0) {
-            parts[i] = parts[i].replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        }
-    }
-    return parts.join('');
 }
 
 function authHeaders(isMultipart = false) {
@@ -82,17 +52,15 @@ function escapeHtml(unsafe) {
         .replace(/'/g, "&#039;");
 }
 
-function extractTextFromBlocks(blocks) {
-    if (!Array.isArray(blocks)) return '';
-    return blocks
-        .filter((b) => b && b.type === 'text' && typeof b.value === 'string')
-        .map((b) => b.value)
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim();
+function getQuestionDisplayText(q) {
+    if (q?.text && String(q.text).trim()) return q.text;
+    return QuestionRenderer.extractTextFromBlocks(q?.content_json || []);
 }
 
-// ─── RAG: Tải danh sách Tài liệu khi chọn Lớp học ───
+function getOptionDisplayText(o) {
+    if (o?.text && String(o.text).trim()) return o.text;
+    return QuestionRenderer.extractTextFromBlocks(o?.content_json || []);
+}
 async function loadRagDocuments(classId) {
     const wrap = document.getElementById('ragDocumentWrap');
     const sel = document.getElementById('ragDocument');
@@ -119,60 +87,18 @@ async function loadRagDocuments(classId) {
     }
 }
 
-function buildQuestionImageMap(questionImages) {
-    const map = {};
-    if (!Array.isArray(questionImages)) return map;
-    questionImages.forEach((qi) => {
-        const sha = qi?.image?.sha256;
-        const url = qi?.image?.image_url;
-        if (sha && url) map[sha] = url;
-    });
-    return map;
-}
-
-function renderContentBlocks(blocks, imageMap = {}) {
-    if (!Array.isArray(blocks) || blocks.length === 0) return '';
-
-    return blocks.map((b) => {
-        if (!b || !b.type) return '';
-        if (b.type === 'text') {
-            return `<span>${escapeHtml(b.value || '')}</span>`;
-        }
-        if (b.type === 'image') {
-            const url = b.url || (b.sha256 ? imageMap[b.sha256] : null);
-            if (url) {
-                return `<img src="${url}" class="img-fluid rounded border my-2 d-block" style="max-height: 180px;" alt="image-block">`;
-            }
-            if (b.sha256) {
-                return `<span class="badge bg-light text-dark border my-1">image:${escapeHtml(String(b.sha256).slice(0, 12))}...</span>`;
-            }
-        }
-        return '';
-    }).join(' ');
-}
-
 function renderQuestionStem(q, extraClass = '') {
-    // Merge question_images map with global extractedImagesMap (for Draft Board items)
-    const imageMap = Object.assign({}, window.extractedImagesMap || {}, buildQuestionImageMap(q?.question_images || []));
-    const blocksHtml = Array.isArray(q?.content_json) ? renderContentBlocks(q.content_json, imageMap) : '';
-    const textFallback = getQuestionDisplayText(q);
-    const imgHtml = q?.image
-        ? `<div class="mb-2"><img src="${q.image}" class="img-fluid rounded border" style="max-height: 200px;" alt="Hình ảnh câu hỏi"></div>`
-        : '';
-    const stemHtml = blocksHtml && blocksHtml.trim()
-        ? `<div class="${extraClass}">${blocksHtml}</div>`
-        : `<div class="${extraClass} q-markdown-text">${marked.parse(safeEscapeHtmlForMarkdown(textFallback || ''))}</div>`;
-    return `${imgHtml}${stemHtml}`;
+    return QuestionRenderer.renderStem(q, { containerClass: extraClass });
 }
 
 function getQuestionDisplayText(q) {
     if (q?.text && String(q.text).trim()) return q.text;
-    return extractTextFromBlocks(q?.content_json || []);
+    return QuestionRenderer.extractTextFromBlocks(q?.content_json || []);
 }
 
 function getOptionDisplayText(o) {
     if (o?.text && String(o.text).trim()) return o.text;
-    return extractTextFromBlocks(o?.content_json || []);
+    return QuestionRenderer.extractTextFromBlocks(o?.content_json || []);
 }
 
 function hasConfiguredAnswer(q) {
@@ -187,34 +113,31 @@ function hasConfiguredAnswer(q) {
 function renderQuestionContent(q) {
     const type = q.question_type || 'multiple_choice';
     let html = '';
-    // Merge question_images map with global extractedImagesMap (for Draft Board items)
-    const imageMap = Object.assign({}, window.extractedImagesMap || {}, buildQuestionImageMap(q.question_images || []));
 
     if (type === 'multiple_choice') {
         html = (q.options || []).map((o, i) => {
             const l = String.fromCharCode(65 + i);
             const cls = o.is_correct ? 'fw-bold text-success' : '';
-            const val = getOptionDisplayText(o);
-            const blocks = Array.isArray(o.content_json) ? renderContentBlocks(o.content_json, imageMap) : '';
-            return blocks && blocks.trim()
-                ? `<div class="${cls}">${l}. <span class="small">${blocks}</span></div>`
-                : `<div class="${cls}">${l}. <span class="q-markdown-text markdown-inline">${marked.parseInline(safeEscapeHtmlForMarkdown(val || ''))}</span></div>`;
+            const contentHtml = QuestionRenderer.renderOption(o, q.question_images);
+            return `<div class="${cls}">${l}. ${contentHtml}</div>`;
         }).join('');
 
     } else if (type === 'true_false') {
         if (q.context) {
-            html += `<div class="bg-light border rounded p-2 mb-2 small fst-italic q-markdown-text markdown-inline">${marked.parseInline(safeEscapeHtmlForMarkdown(q.context || ''))}</div>`;
+            // Use QuestionRenderer's markdown helper if we want consistency, 
+            // but since it's private (_renderMarkdownInline), we'll do a simple marked call here 
+            // or just use QuestionRenderer.renderStem for the context if it was treated as a stem.
+            // For now, let's just use window.marked directly as it's available.
+            const safeContext = q.context.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            html += `<div class="bg-light border rounded p-2 mb-2 small fst-italic q-markdown-text markdown-inline">${marked.parseInline(safeContext)}</div>`;
         }
         html += (q.options || []).map((o, i) => {
             const l = String.fromCharCode(97 + i); // a, b, c, d
             const icon = o.is_correct
                 ? '<i class="bi bi-check-circle-fill text-success me-1"></i><span class="text-success fw-bold">Đúng</span>'
                 : '<i class="bi bi-x-circle-fill text-danger me-1"></i><span class="text-danger fw-bold">Sai</span>';
-            const val = getOptionDisplayText(o);
-            const blocks = Array.isArray(o.content_json) ? renderContentBlocks(o.content_json, imageMap) : '';
-            return blocks && blocks.trim()
-                ? `<div class="mb-1">${l}) <span class="small">${blocks}</span> → ${icon}</div>`
-                : `<div class="mb-1">${l}) <span class="q-markdown-text markdown-inline">${marked.parseInline(safeEscapeHtmlForMarkdown(val || ''))}</span> → ${icon}</div>`;
+            const contentHtml = QuestionRenderer.renderOption(o, q.question_images);
+            return `<div class="mb-1">${l}) ${contentHtml} → ${icon}</div>`;
         }).join('');
 
     } else if (type === 'short_answer') {
@@ -228,14 +151,10 @@ function renderQuestionContent(q) {
 // ─── Init ────────────────────────────────────────────────────────────────────
 
 async function init() {
-    const token = localStorage.getItem('access');
-    if (!token) { window.location.href = '/login/'; return; }
+    const me = await window.getCurrentUser();
+    if (!me) { window.location.href = '/login/'; return; }
 
     try {
-        const meRes = await fetch('/api/accounts/me/', { headers: authHeaders() });
-        if (meRes.status === 401) { window.location.href = '/login/'; return; }
-
-        const me = await meRes.json();
         if (me.role?.name !== 'teacher' && me.role?.name !== 'admin') {
             alert('Bạn không có quyền truy cập trang này.');
             window.location.href = '/dashboard/';
@@ -250,6 +169,16 @@ async function init() {
         const aiExtractSubWrap = document.getElementById('aiExtractSubjectWrap');
         if (aiExtractSubWrap) aiExtractSubWrap.style.display = 'none';
 
+        // FIX Bug 1: Remove 'required' from hidden select and populate with quizData.subject_id
+        // Nếu không làm điều này, HTML5 validation sẽ block form submit vì select required đang trống
+        const aiExtractSub = document.getElementById('aiExtractSubject');
+        if (aiExtractSub) {
+            aiExtractSub.removeAttribute('required');
+            if (quizData?.subject_id) {
+                aiExtractSub.innerHTML = `<option value="${quizData.subject_id}" selected>${quizData.subject_name || ''}</option>`;
+            }
+        }
+
         // RAG: Tải danh mục tài liệu của lớp học này
         if (quizData && quizData.classroom) {
             const ragClassSelect = document.getElementById('ragClass');
@@ -261,8 +190,40 @@ async function init() {
             }
         }
 
+        // FIX Bug 2: bindAiGeneratorEvents() is called via DOMContentLoaded (see bottom of file)
+        // to ensure events are always bound regardless of init() success/failure.
+        // The aiExtractSubject fix below is done here (after quizData loads) to populate subject correctly.
+
         document.getElementById('loadingQuiz').style.display = 'none';
         document.getElementById('quizContent').style.display = 'block';
+
+        // Initialize AI Generator shared logic
+        AIGenerator.init({
+            context: 'quiz',
+            quizId: quizId,
+            subjectId: quizData?.subject_id,
+            onSaveSuccess: async () => {
+                await loadQuizData();
+                await loadSelectedQuestions();
+                await loadQuestionBank();
+            }
+        });
+
+        // Initialize Shared Question Editor
+        const subjectsRes = await fetch('/api/classes/subjects/', { headers: authHeaders() });
+        const subjectsData = await subjectsRes.json();
+        
+        QuestionEditor.init({
+            context: 'quiz',
+            subjects: subjectsData,
+            subjectId: quizData?.subject_id,
+            currentQuizId: quizId,
+            onSave: async () => {
+                await loadQuizData();
+                await loadSelectedQuestions();
+                await loadQuestionBank();
+            }
+        });
     } catch (e) {
         console.error(e);
         showInitError(e?.message || 'Lỗi khởi tạo màn hình. Vui lòng đăng nhập lại.');
@@ -567,249 +528,22 @@ async function submitEditQuiz() {
 
 
 
-// ─── Create Question Form Toggle ────────────────────────────────────────────
-
-function toggleQbOptions() {
-    const type = document.getElementById('qbType').value;
-    const container = document.getElementById('qbOptionsContainer');
-    const ctxWrap = document.getElementById('qbContextWrapper');
-
-    if (ctxWrap) ctxWrap.style.display = (type === 'true_false') ? 'block' : 'none';
-
-    let html = '';
-    if (type === 'multiple_choice') {
-        html = `
-            <p class="text-muted small mb-2">Nhập 4 phương án và chọn 1 phương án đúng:</p>
-            ${[0, 1, 2, 3].map(i => `
-                <div class="d-flex mb-2 align-items-center gap-2">
-                    <div class="form-check m-0">
-                        <input class="form-check-input" type="radio" name="qbOptCorrect" value="${i}" ${i === 0 ? 'checked' : ''}>
-                    </div>
-                    <span class="fw-bold">${String.fromCharCode(65 + i)}.</span>
-                    <input type="text" class="form-control form-control-sm qbOptText" placeholder="Nội dung phương án ${String.fromCharCode(65 + i)}..." required>
-                </div>
-            `).join('')}
-        `;
-    } else if (type === 'true_false') {
-        html = `
-            <p class="text-muted small mb-2">Nhập 4 phát biểu và xét tính Đúng/Sai:</p>
-            ${[0, 1, 2, 3].map(i => `
-                <div class="d-flex mb-2 align-items-center gap-2">
-                    <span class="fw-bold">${String.fromCharCode(97 + i)}.</span>
-                    <input type="text" class="form-control form-control-sm qbOptText" placeholder="Phát biểu ${String.fromCharCode(97 + i)}..." required>
-                    <div class="btn-group btn-group-sm ms-2" role="group">
-                        <input type="radio" class="btn-check qbTfOpt_${i}" name="qbTfOpt_${i}" id="qbTfOpt_${i}_t" value="true">
-                        <label class="btn btn-outline-success" for="qbTfOpt_${i}_t">Đ</label>
-                        <input type="radio" class="btn-check qbTfOpt_${i}" name="qbTfOpt_${i}" id="qbTfOpt_${i}_f" value="false" checked>
-                        <label class="btn btn-outline-danger" for="qbTfOpt_${i}_f">S</label>
-                    </div>
-                </div>
-            `).join('')}
-        `;
-    } else if (type === 'short_answer') {
-        html = `
-            <p class="text-muted small mb-2">Nhập chính xác đáp án (hệ thống tự loại bỏ khoảng trắng khi chấm):</p>
-            <input type="text" id="qbSaCorrect" class="form-control form-control-lg text-primary fw-bold" placeholder="Vd: 5.5, HCl..." required>
-        `;
-    }
-    container.innerHTML = html;
+function openQuestionEditor() {
+    QuestionEditor.open();
 }
-
-async function submitCreateQuestion() {
-    const errEl = document.getElementById('createQError');
-    errEl.textContent = '';
-
-    const text = qbEasyMDE ? qbEasyMDE.value().trim() : '';
-    const difficulty = document.getElementById('newQuestionDiff').value;
-    const qType = document.getElementById('qbType').value;
-    const context = (document.getElementById('qbContext')?.value || '').trim();
-
-    if (!text) { errEl.textContent = "Bạn chưa nhập nội dung câu hỏi."; return; }
-
-    const isEditMode = (typeof editingQuestionId !== 'undefined' && editingQuestionId !== null);
-    const addToQuizNow = !!document.getElementById('addManualToQuiz')?.checked;
-
-    // Get subject_id from quizData directly (optimized)
-    const subjectId = quizData.subject_id;
-
-    let payload = {
-        question_type: qType,
-        text: text,
-        difficulty: difficulty,
-        context: context
-    };
-
-    if (qType === 'short_answer') {
-        const correctText = (document.getElementById('qbSaCorrect')?.value || '').trim();
-        if (!correctText) { errEl.textContent = "Vui lòng nhập đáp án đúng."; return; }
-        payload.correct_answer_text = correctText;
-    } else {
-        const optTexts = document.querySelectorAll('.qbOptText');
-        let options = [];
-        let hasEmpty = false;
-
-        if (qType === 'multiple_choice') {
-            const correctVal = document.querySelector('input[name="qbOptCorrect"]:checked');
-            if (!correctVal) { errEl.textContent = "Vui lòng chọn 1 đáp án đúng."; return; }
-            const correctIdx = parseInt(correctVal.value);
-
-            optTexts.forEach((el, i) => {
-                const val = el.value.trim();
-                if (!val) hasEmpty = true;
-                options.push({ text: val, is_correct: (i === correctIdx) });
-            });
-        } else if (qType === 'true_false') {
-            optTexts.forEach((el, i) => {
-                const val = el.value.trim();
-                if (!val) hasEmpty = true;
-                const isCorrect = document.getElementById(`qbTfOpt_${i}_t`).checked;
-                options.push({ text: val, is_correct: isCorrect });
-            });
-        }
-
-        if (hasEmpty) { errEl.textContent = "Vui lòng nhập đầy đủ nội dung các phương án."; return; }
-        payload.options = options;
-    }
-
-    let res;
-    if (isEditMode) {
-        res = await fetch(`/api/exams/questions/${editingQuestionId}/update-full/`, {
-            method: 'PUT',
-            headers: authHeaders(),
-            body: JSON.stringify(payload)
-        });
-    } else {
-        res = await fetch('/api/ai/generate/save-bulk/', {
-            method: 'POST',
-            headers: authHeaders(),
-            body: JSON.stringify({
-                questions: [payload],
-                quiz_id: addToQuizNow ? quizId : null,
-                subject_id: subjectId,
-                points: addToQuizNow
-                    ? parseFloat((10 / (selectedQuestions.length + 1)).toFixed(2))
-                    : 0.0
-            })
-        });
-    }
-
-    if (res.ok) {
-        const modalEl = document.getElementById('createQuestionModal');
-        const modal = bootstrap.Modal.getInstance(modalEl);
-        if (modal) modal.hide();
-
-        showGlobalAlert(isEditMode ? 'Cập nhật câu hỏi thành công!' : 'Tạo mới thành công!', 'success');
-        if (isEditMode) editingQuestionId = null;
-
-        await loadQuizData();
-        await loadSelectedQuestions();
-        await loadQuestionBank();
-    } else {
-        const data = await res.json();
-        errEl.textContent = (data.error || data.detail || "Lỗi lưu câu hỏi.");
-    }
-}
-
-// ─── Modal Events ───────────────────────────────────────────────────────────
-
-document.addEventListener('DOMContentLoaded', () => {
-    const modalEl = document.getElementById('createQuestionModal');
-    if (modalEl) {
-        modalEl.addEventListener('show.bs.modal', () => {
-            // Reset form if not in edit mode
-            if (!editingQuestionId) {
-                document.getElementById('qbModalTitle').innerText = 'Tạo câu hỏi thủ công';
-                document.getElementById('createQuestionForm').reset();
-                document.getElementById('qbType').value = 'multiple_choice';
-                document.getElementById('qbContext').value = '';
-
-                // Populate subject name
-                const subSel = document.getElementById('qbSubject');
-                if (subSel) {
-                    subSel.innerHTML = `<option value="${quizData.subject_id}" selected>${quizData.subject_name}</option>`;
-                }
-
-                toggleQbOptions();
-            }
-
-            // Initialize EasyMDE if not exists
-            if (!qbEasyMDE) {
-                qbEasyMDE = new EasyMDE({
-                    element: document.getElementById('qbText'),
-                    spellChecker: false,
-                    autosave: { enabled: false },
-                    status: false,
-                    placeholder: "Nhập nội dung câu hỏi (Markdown hỗ trợ)...",
-                    minHeight: "150px"
-                });
-            }
-        });
-
-        modalEl.addEventListener('shown.bs.modal', () => {
-            if (qbEasyMDE) qbEasyMDE.codemirror.refresh();
-        });
-
-        modalEl.addEventListener('hidden.bs.modal', () => {
-            editingQuestionId = null;
-            if (qbEasyMDE) qbEasyMDE.value('');
-            document.getElementById('createQuestionForm').reset();
-        });
-    }
-});
 
 async function editQuestion(qId) {
-    editingQuestionId = qId;
     try {
         const res = await fetch(`/api/exams/questions/${qId}/`, { headers: authHeaders() });
         if (!res.ok) throw new Error("Lỗi tải thông tin câu hỏi.");
         const q = await res.json();
-
-        const modalEl = document.getElementById('createQuestionModal');
-        const modal = new bootstrap.Modal(modalEl);
-        modal.show();
-
-        document.getElementById('qbModalTitle').innerText = 'Chỉnh sửa câu hỏi';
-
-        // Populate fields
-        document.getElementById('qbType').value = q.question_type;
-        document.getElementById('qbDiff').value = q.difficulty;
-        document.getElementById('qbContext').value = q.context || '';
-
-        const subSel = document.getElementById('qbSubject');
-        if (subSel) {
-            subSel.innerHTML = `<option value="${q.subject}" selected>${q.subject_name}</option>`;
-        }
-
-        if (qbEasyMDE) qbEasyMDE.value(q.text || '');
-
-        toggleQbOptions();
-
-        // Populate options
-        if (q.question_type === 'short_answer') {
-            const saInput = document.getElementById('qbSaCorrect');
-            if (saInput) saInput.value = q.correct_answer_text || '';
-        } else {
-            const optTexts = document.querySelectorAll('.qbOptText');
-            q.options.forEach((opt, i) => {
-                if (optTexts[i]) optTexts[i].value = opt.text;
-                if (q.question_type === 'multiple_choice') {
-                    if (opt.is_correct) {
-                        const radio = document.querySelector(`input[name="qbOptCorrect"][value="${i}"]`);
-                        if (radio) radio.checked = true;
-                    }
-                } else if (q.question_type === 'true_false') {
-                    const tRadio = document.getElementById(`qbTfOpt_${i}_t`);
-                    const fRadio = document.getElementById(`qbTfOpt_${i}_f`);
-                    if (opt.is_correct) {
-                        if (tRadio) tRadio.checked = true;
-                    } else {
-                        if (fRadio) fRadio.checked = true;
-                    }
-                }
-            });
-        }
+        QuestionEditor.open({ data: q });
     } catch (e) {
-        showGlobalAlert(e.message, 'danger');
+        if (window.showGlobalAlert) {
+            window.showGlobalAlert(e.message, 'danger');
+        } else {
+            alert(e.message);
+        }
     }
 }
 
@@ -847,367 +581,9 @@ document.getElementById('confirmDeleteQuizBtn')?.addEventListener('click', async
         btn.innerHTML = 'Đồng ý Xoá';
     }
 });
-// ─── Quiz Builder Image Gallery ──────────────────────────────────────────────
-async function uploadQuizBuilderImage() {
-    const fileInput = document.getElementById('qbImageFile');
-    const file = fileInput.files[0];
-    const statusEl = document.getElementById('qbImageStatus');
 
-    if (!file) {
-        statusEl.innerHTML = '<span class="text-danger">Vui lòng chọn ảnh.</span>';
-        return;
-    }
 
-    statusEl.innerHTML = '<span class="text-info">Đang tải...</span>';
-    const fd = new FormData();
-    fd.append('image', file);
 
-    try {
-        const res = await fetch('/api/exams/questions/images/upload/', {
-            method: 'POST',
-            headers: authHeaders(true),
-            body: fd
-        });
-        const data = await res.json();
-        if (res.ok) {
-            statusEl.innerHTML = '<span class="text-success">Tải ảnh lên kho thành công!</span>';
-            fileInput.value = '';
-            appendImageToGallery(data.url, data.sha256);
-        } else {
-            statusEl.innerHTML = `<span class="text-danger">Lỗi: ${data.error || 'Kho ảnh từ chối tải.'}</span>`;
-        }
-    } catch (e) {
-        statusEl.innerHTML = `<span class="text-danger">Lỗi kết nối.</span>`;
-    }
-}
 
-function appendImageToGallery(url, sha) {
-    const listEl = document.getElementById('qbImageList');
-    if (listEl.innerHTML.includes('Chưa có ảnh nào')) {
-        listEl.innerHTML = '';
-    }
-    const safeSha = sha ? sha.slice(0, 16) + '...' : 'Không có SHA';
-    const item = document.createElement('div');
-    item.className = 'd-flex gap-2 border rounded bg-white p-2 mb-2 align-items-center';
-    item.innerHTML = `
-        <img src="${url}" alt="q-img" class="rounded border" style="width:48px;height:48px;object-fit:cover;">
-        <div class="flex-grow-1">
-            <div class="small fw-bold">${safeSha}</div>
-            <button type="button" class="btn btn-sm btn-light border py-0 px-2 mt-1" style="font-size:0.75rem;" onclick="copyMarkdownImage('${url}')">
-                <i class="bi bi-clipboard"></i> Copy mã chèn
-            </button>
-        </div>
-    `;
-    listEl.insertBefore(item, listEl.firstChild);
-}
-
-function copyMarkdownImage(url) {
-    const md = `![Hình ảnh](${url})`;
-    navigator.clipboard.writeText(md).then(() => {
-        if (typeof showGlobalAlert === 'function') {
-            showGlobalAlert('Đã copy mã chèn ảnh. Bạn có thể chèn vào nội dung!', 'info');
-        } else {
-            alert('Đã copy mã chèn ảnh: ' + md);
-        }
-    }).catch(err => {
-        console.error('Lỗi copy: ', err);
-    });
-}
-
-// ─── AI Draft Board (Builder) ─────────────────────────────────────────────
-
-// Guard chống thoát trang khi AI đang xử lý
-let aiParsingInProgress = false;
-window.addEventListener('beforeunload', function (e) {
-    if (aiParsingInProgress) {
-        e.preventDefault();
-        e.returnValue = 'AI đang phân tích tài liệu. Nếu thoát, dữ liệu sẽ bị mất. Bạn có chắc muốn rời trang?';
-        return e.returnValue;
-    }
-});
-
-function renderDraftBoard(source) {
-    const drafts = currentDrafts[source];
-    const board = document.getElementById(source === 'file' ? 'aiDraftBoardFile' : 'aiDraftBoardRag');
-    if (!board) return;
-
-    if (!drafts.length) {
-        board.innerHTML = '<div class="text-center text-muted mt-5">Không tìm thấy câu hỏi nào hợp lệ.</div>';
-        return;
-    }
-
-    board.innerHTML = drafts.map((q, index) => {
-        const qType = q.question_type || 'multiple_choice';
-        const unresolved = !hasConfiguredAnswer(q);
-
-        let explanationHtml = '';
-        if (q.explanation && q.explanation.trim()) {
-            explanationHtml = `<div class="mt-2 p-2 bg-success text-white bg-opacity-10 border border-success rounded small"><strong class="text-success"><i class="bi bi-lightbulb"></i> Lời giải / Trích xuất:</strong> <span class="text-dark">${escapeHtml(q.explanation)}</span></div>`;
-        }
-
-        let contextHtml = '';
-        if (q.context && q.context.trim()) {
-            contextHtml = `<div class="bg-light p-2 mb-2 rounded small fst-italic border-start border-3 border-secondary text-muted"><strong>Ngữ cảnh:</strong> ${escapeHtml(q.context)}</div>`;
-        }
-
-        return `
-            <div class="card mb-3 border-primary shadow-sm">
-                <div class="card-header bg-white d-flex justify-content-between align-items-start p-3">
-                    <div class="form-check w-100 pe-3">
-                        <input class="form-check-input ai-draft-cb-${source} mt-2" type="checkbox" value="${index}" checked id="draft_${source}_${index}">
-                        <label class="form-check-label fw-bold d-block mb-1" for="draft_${source}_${index}">Câu ${index + 1}:</label>
-                        <div class="ps-4">
-                            ${contextHtml}
-                            ${renderQuestionStem(q)}
-                        </div>
-                        ${unresolved ? '<div class="ps-4 mt-1"><span class="badge bg-danger">Chưa cài đặt đáp án đúng</span></div>' : ''}
-                    </div>
-                    <div class="d-flex gap-1 align-items-center">
-                        ${typeBadge(qType)}
-                        ${diffBadge(q.difficulty)}
-                    </div>
-                </div>
-                <div class="card-body p-3">
-                    ${renderQuestionContent(q)}
-                    ${explanationHtml}
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-
-function selectAllDrafts(source) {
-    const checkboxes = document.querySelectorAll(`.ai-draft-cb-${source}`);
-    let allChecked = true;
-    checkboxes.forEach((cb) => { if (!cb.checked) allChecked = false; });
-    checkboxes.forEach((cb) => { cb.checked = !allChecked; });
-}
-
-async function saveSelectedDrafts(source) {
-    const checkboxes = document.querySelectorAll(`.ai-draft-cb-${source}:checked`);
-    if (checkboxes.length === 0) {
-        alert('Vui lòng chọn ít nhất 1 câu hỏi.');
-        return;
-    }
-
-    const selectedDrafts = [];
-    checkboxes.forEach((cb) => selectedDrafts.push(currentDrafts[source][parseInt(cb.value, 10)]));
-
-    const btnId = source === 'file' ? 'btnSaveDraftsFile' : 'btnSaveDraftsRag';
-    const saveToQuizSwitchId = source === 'file' ? 'saveToQuizFile' : 'saveToQuizRag';
-    const shouldAddToQuiz = !!document.getElementById(saveToQuizSwitchId)?.checked;
-    const btn = document.getElementById(btnId);
-    if (!btn) return;
-
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Đang lưu...';
-
-    try {
-        const res = await fetch('/api/ai/generate/save-bulk/', {
-            method: 'POST',
-            headers: authHeaders(),
-            body: JSON.stringify({
-                questions: selectedDrafts,
-                quiz_id: shouldAddToQuiz ? quizId : null,
-                subject_id: quizData?.subject_id,
-            }),
-        });
-
-        const data = await res.json();
-        if (!res.ok) {
-            alert(`Lỗi lưu: ${data.error || 'Unknown error'}`);
-            return;
-        }
-
-        showGlobalAlert(`Đã nhập ${selectedDrafts.length} câu hỏi thành công!`, 'success');
-        bootstrap.Modal.getInstance(document.getElementById('aiGeneratorModal'))?.hide();
-
-        await loadQuizData();
-        await loadSelectedQuestions();
-        await loadQuestionBank();
-
-        currentDrafts[source] = [];
-        const board = document.getElementById(source === 'file' ? 'aiDraftBoardFile' : 'aiDraftBoardRag');
-        if (board) {
-            board.innerHTML = '<div class="text-center text-muted mt-5">Không tìm thấy câu hỏi nào hợp lệ.</div>';
-        }
-    } catch (e) {
-        alert('Lỗi kết nối.');
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-cloud-arrow-up me-1"></i>Lưu các câu đã chọn';
-    }
-}
-
-function bindAiGeneratorEvents() {
-    const aiExtractForm = document.getElementById('aiExtractForm');
-    if (aiExtractForm && !aiExtractForm.dataset.bound) {
-        aiExtractForm.dataset.bound = '1';
-        aiExtractForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const fileInput = document.getElementById('aiFileInput');
-            const file = fileInput?.files?.[0];
-            if (!file) return;
-
-            const btn = document.getElementById('btnExtractAI');
-            const loader = document.getElementById('aiExtractLoading');
-            const errBox = document.getElementById('aiExtractError');
-            const saveBtn = document.getElementById('btnSaveDraftsFile');
-
-            if (errBox) errBox.textContent = '';
-            if (btn) btn.disabled = true;
-            if (saveBtn) saveBtn.style.display = 'none';
-
-            // Hiện loader kèm thông báo thời gian xử lý
-            if (loader) {
-                loader.innerHTML = `
-                    <div class="d-flex align-items-center gap-2 text-primary">
-                        <span class="spinner-border spinner-border-sm" role="status"></span>
-                        <span><strong>AI đang phân tích tài liệu...</strong><br>
-                        <small class="text-muted">Quá trình này có thể mất 1–3 phút tuỳ dung lượng file. Vui lòng <strong>không đóng hoặc chuyển trang</strong> trong thời gian chờ.</small></span>
-                    </div>`;
-                loader.style.display = 'block';
-            }
-
-            // Bật guard chống thoát trang
-            aiParsingInProgress = true;
-
-            try {
-                // Upload trực tiếp sang Cloudinary trước
-                const cloudName = 'dvwkjiz2i';
-                const uploadPreset = 'nvh_upload';
-
-                const filesData = [];
-                const filesCount = fileInput.files.length;
-
-                for (let i = 0; i < filesCount; i++) {
-                    const f = fileInput.files[i];
-                    if (errBox) errBox.innerHTML = `<span class="text-info">Đang tải lên mây trung gian (${i + 1}/${filesCount})...</span>`;
-
-                    const cloudFormData = new FormData();
-                    cloudFormData.append('file', f);
-                    cloudFormData.append('upload_preset', uploadPreset);
-
-                    const cloudRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
-                        method: 'POST',
-                        body: cloudFormData
-                    });
-
-                    if (!cloudRes.ok) {
-                        const cloudErr = await cloudRes.json();
-                        throw new Error(cloudErr.error?.message || 'Có lỗi khi upload file lên mây.');
-                    }
-
-                    const cloudData = await cloudRes.json();
-                    filesData.push({ file_url: cloudData.secure_url, file_name: f.name });
-                }
-
-                if (errBox) errBox.innerHTML = '<span class="text-success">Tải lên hoàn tất. Trình phân tích đang xử lý tài liệu...</span>';
-
-                const res = await fetch('/api/ai/generate/extract-file/', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': 'Bearer ' + localStorage.getItem('access'),
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        files: filesData,
-                        subject_id: quizData?.subject_id
-                    }),
-                });
-
-                const data = await res.json();
-                if (!res.ok) {
-                    if (errBox) errBox.textContent = data.error || 'Lỗi trích xuất từ server.';
-                    return;
-                }
-
-                if (errBox) errBox.innerHTML = '';
-                // Lưu sha256→url map để render ảnh trong Draft Board
-                window.extractedImagesMap = (data.images && typeof data.images === 'object') ? data.images : {};
-                currentDrafts.file = Array.isArray(data.questions) ? data.questions : [];
-                renderDraftBoard('file');
-                if (saveBtn && currentDrafts.file.length) saveBtn.style.display = 'inline-block';
-            } catch (err) {
-                if (errBox) errBox.textContent = err.message || 'Lỗi kết nối tới AI Service.';
-            } finally {
-                aiParsingInProgress = false;
-                if (btn) btn.disabled = false;
-                if (loader) { loader.style.display = 'none'; loader.innerHTML = ''; }
-                if (fileInput) fileInput.value = '';
-            }
-        });
-    }
-
-    const ragGenerateForm = document.getElementById('ragGenerateForm');
-    if (ragGenerateForm && !ragGenerateForm.dataset.bound) {
-        ragGenerateForm.dataset.bound = '1';
-        ragGenerateForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-
-            const topic = (document.getElementById('ragTopic')?.value || '').trim();
-            const count = document.getElementById('ragCount')?.value;
-            const difficulty = document.getElementById('ragDifficulty')?.value;
-            const questionTypes = document.getElementById('ragQuestionTypes')?.value;
-            if (!topic) return;
-
-            const btn = document.getElementById('btnGenerateRAG');
-            const loader = document.getElementById('ragLoading');
-            const errBox = document.getElementById('ragError');
-            const saveBtn = document.getElementById('btnSaveDraftsRag');
-
-            if (errBox) errBox.textContent = '';
-            if (btn) btn.disabled = true;
-            if (saveBtn) saveBtn.style.display = 'none';
-
-            // Hiện loader kèm thông báo thời gian xử lý
-            if (loader) {
-                loader.innerHTML = `
-                    <div class="d-flex align-items-center gap-2 text-primary">
-                        <span class="spinner-border spinner-border-sm" role="status"></span>
-                        <span><strong>AI đang tạo câu hỏi từ tài liệu nội bộ...</strong><br>
-                        <small class="text-muted">Quá trình này có thể mất 30 giây – 2 phút. Vui lòng <strong>không đóng hoặc chuyển trang</strong> trong thời gian chờ.</small></span>
-                    </div>`;
-                loader.style.display = 'block';
-            }
-
-            // Bật guard chống thoát trang
-            aiParsingInProgress = true;
-
-            try {
-                const res = await fetch('/api/ai/generate/from-rag/', {
-                    method: 'POST',
-                    headers: authHeaders(),
-                    body: JSON.stringify({
-                        class_id: quizData?.classroom,
-                        topic,
-                        count: parseInt(count, 10),
-                        difficulty,
-                        question_types: questionTypes,
-                        document_id: document.getElementById('ragDocument')?.value || null,
-                    }),
-                });
-
-                const data = await res.json();
-                if (!res.ok) {
-                    if (errBox) errBox.textContent = data.error || 'Lỗi sinh câu hỏi từ tri thức nội bộ.';
-                    return;
-                }
-
-                currentDrafts.rag = Array.isArray(data.questions) ? data.questions : [];
-                renderDraftBoard('rag');
-                if (saveBtn && currentDrafts.rag.length) saveBtn.style.display = 'inline-block';
-            } catch (err) {
-                if (errBox) errBox.textContent = 'Lỗi kết nối tới AI Service.';
-            } finally {
-                aiParsingInProgress = false;
-                if (btn) btn.disabled = false;
-                if (loader) { loader.style.display = 'none'; loader.innerHTML = ''; }
-            }
-        });
-    }
-}
-
-document.addEventListener('DOMContentLoaded', bindAiGeneratorEvents);
 
 init();

@@ -38,189 +38,96 @@ RAG_CACHE_TTL_SECONDS = int(os.environ.get('AI_RAG_CACHE_TTL_SECONDS', '300'))
 
 # ─── Prompt: Trích xuất câu hỏi đa dạng từ tài liệu ────────────────────────
 EXTRACTION_PROMPT = """
-Bạn là hệ thống trích xuất chuyên gia (Expert Data Extractor). Đề thi theo định dạng THPT 2025.
-Nhiệm vụ: đọc nội dung tài liệu (dạng COMPACT TEXT) và bóc tách TOÀN BỘ CÂU HỎI ...
+Bạn là chuyên gia trích xuất dữ liệu đề thi THPT Quốc gia (Format 2025).
+Nhiệm vụ: Trích xuất TOÀN BỘ câu hỏi từ SOURCE (COMPACT TEXT) sang JSON array.
 
-QUY TẮC ĐỌC COMPACT TEXT:
-- `**văn bản**`: Chữ in đậm.
-- `<u>văn bản</u>`: Chữ gạch chân (thường là đáp án).
-- `[IMG:sha256]`: Hình ảnh minh họa.
+QUY TẮC CẤU TRÚC 3 PHẦN (MÔ HÌNH HỆ THỐNG):
 
-YÊU CẦU BẮT BUỘC:
-1. Trích xuất TẤT CẢ câu hỏi có trong tài liệu từ đầu đến câu cuối cùng (thường từ 40-50 câu). Tuyệt đối KHÔNG ĐƯỢC BỎ SÓT hay viết tắt.
-2. Giữ nguyên 100% văn bản gốc của câu hỏi và đáp án, không tự ý tóm tắt câu chữ.
-3. Về hình ảnh:
-   - CHỈ GIỮ LẠI các hình ảnh có ý nghĩa minh họa trực tiếp cho câu hỏi (đồ thị, bản đồ, hình học, sơ đồ thí nghiệm).
-   - LOẠI BỎ: ảnh trang trí, logo, watermark, ô vuông báo điểm, viền khung...
-   - Đặt block `{"type": "image", "sha256": "..."}` đúng vị trí ban đầu.
-4. Về đáp án: Dựa vào "Định dạng trực tiếp" trong văn bản (chữ highlight, gạch chân, in đậm khác thường) hoặc "Bảng đáp án" cuối đề để tìm câu đúng.
+1. multiple_choice (PHẦN I - Trắc nghiệm 4 lựa chọn):
+   - Có 4 phương án A, B, C, D. Chỉ 1 đáp án đúng.
+   - SOURCE: "Câu 1: ... A. ... B. ... C. ... D. ..."
+   - JSON: {"question_type": "multiple_choice", "text": "...", "options": [{"text": "...", "is_correct": bool}, ...]}
 
-PHÂN LOẠI 3 DẠNG CÂU HỎI (THPT 2025):
+2. true_false (PHẦN II - Trắc nghiệm Đúng/Sai):
+   - Có 1 đoạn ngữ cảnh (context) và 4 phát biểu độc lập (a, b, c, d). Thí sinh chọn Đúng hoặc Sai cho mỗi ý.
+   - SOURCE: "Câu 2: [Ngữ cảnh/Hình ảnh] ... a) ... b) ... c) ... d) ..."
+   - BẮT BUỘC: Đưa ngữ cảnh vào `context`, câu lệnh "Xét các phát biểu sau" vào `text`, 4 ý vào `options`.
+   - JSON: {"question_type": "true_false", "context": "...", "text": "...", "options": [{"text": "...", "is_correct": bool}, ...]}
 
-DẠNG 1 — multiple_choice (Trắc nghiệm 4 lựa chọn):
-- Có 4 phương án A, B, C, D. Gán `is_correct: true` cho phương án đúng, các phương án khác `false`.
+3. short_answer (PHẦN III - Câu hỏi trả lời ngắn):
+   - Câu hỏi tính toán, yêu cầu điền đáp số là số cụ thể.
+   - SOURCE: "Câu 3: ... [Lời giải/Đáp số] ..."
+   - JSON: {"question_type": "short_answer", "text": "...", "correct_answer_text": "Số đáp án"}
 
-DẠNG 2 — true_false (Đúng/Sai):
-- Gồm 1 ngữ cảnh chung và 4 phát biểu a, b, c, d. Gán `is_correct: true/false` cho từng phát biểu riêng biệt.
+QUY TẮC NHÃN & ĐỊNH DẠNG:
+- `**văn bản**`: Chữ in đậm. `<u>văn bản</u>`: Đáp án (gạch chân). `[IMG:sha256]`: Hình ảnh.
+- TUYỆT ĐỐI KHÔNG để nhãn "A.", "B.", "a)", "b)"... vào nội dung `text` của question hay option.
+- Nếu thấy bảng đáp án ở cuối, hãy dùng nó để gán `is_correct`.
 
-DẠNG 3 — short_answer (Trả lời ngắn):
-- Thí sinh tính toán và điền kết quả số.
-- BẮT BUỘC: Bạn phải tự trích xuất con số đáp án cuối cùng (nếu đề có ghi đáp án) và đưa ĐÚNG con số đó vào trường `correct_answer_text`. Tuyệt đối không để trống nếu đề có đáp án.
-
-OUTPUT FORMAT BẮT BUỘC (Trả về duy nhất JSON array, không kèm text/giải thích):
+VÍ DỤ TRÍCH XUẤT (CÓ HÌNH ẢNH):
+SOURCE:
+Câu 1: Cho sơ đồ thí nghiệm sau:
+[IMG:abcd1234]
+Xét các phát biểu sau:
+a) CuO bị khử bởi khí H2. b) <u>Có giọt nước đọng lại</u>.
+---
+JSON:
 [
   {
-    "question_type": "multiple_choice",
-    "difficulty": "medium", // 'easy'=Nhận biết, 'medium'=Thông hiểu, 'hard'=Vận dụng
-    "content_json": [
-       {"type": "text", "value": "Nội dung câu "},
-       {"type": "image", "sha256": "a3f9c...", "width_pt": 78, "height_pt": 18.5},
-       {"type": "text", "value": " là gì?"}
-    ],
-    "options": [
-      { "content_json": [ {"type": "text", "value": "Phương án A"} ], "is_correct": true }
-    ]
-  },
-  {
     "question_type": "true_false",
-    "difficulty": "hard", // 'hard'=Vận dụng
-    "context": "Ngữ cảnh thí nghiệm...",
-    "content_json": [ {"type": "text", "value": "Xét các phát biểu:"} ],
+    "context": "Cho sơ đồ thí nghiệm sau:\n[IMG:abcd1234]",
+    "text": "Xét các phát biểu sau đây:",
     "options": [
-      { "content_json": [ {"type": "text", "value": "Phát biểu a: ..."} ], "is_correct": true }
+      {"text": "CuO bị khử bởi khí H2.", "is_correct": false},
+      {"text": "Trong ống nghiệm có các giọt nước đọng lại.", "is_correct": true}
     ]
-  },
-  {
-    "question_type": "short_answer",
-    "difficulty": "hard", // 'hard'=Vận dụng
-    "content_json": [ {"type": "text", "value": "Tính giá trị... "} ],
-    "correct_answer_text": "42"
   }
 ]
 """
 
 
 
-EXTRACTION_PROMPT_GENERIC = """
-Bạn là hệ thống trích xuất câu hỏi từ tài liệu học tập.
-
-Nhiệm vụ:
-- Đọc tài liệu đầu vào (PDF hoặc ảnh).
-- Trích xuất các câu hỏi theo 3 dạng: multiple_choice, true_false, short_answer.
-- Nếu không chắc đáp án đúng, để is_correct=false hoặc để trống correct_answer_text.
-- BẮT BUỘC trích xuất đầy đủ tất cả câu hỏi có trong tài liệu, không chỉ câu đầu tiên.
-
-QUAN TRỌNG:
-1. Trả về duy nhất JSON array, không có giải thích.
-2. Mỗi câu phải có text rõ ràng, không để rỗng.
-3. Dùng format chuẩn bên dưới.
-
-QUY TẮC ẢNH (RẤT QUAN TRỌNG):
-    - KHÔNG lấy hoặc KHÔNG giữ các ảnh KHÔNG LIÊN QUAN tới nội dung câu hỏi: các hình trang trí, watermark, khung/ô vuông để ghi đáp án, checkbox, hoặc các shape chỉ phục vụ bố cục.
-    - Chỉ giữ ảnh khi ảnh đó trực tiếp minh hoạ (đồ thị, sơ đồ, hình vẽ, ảnh thí nghiệm, mô tả hình học...).
-    - Nếu một ảnh chỉ biểu thị ô trống/ô đáp án hay là hình đánh dấu (ví dụ ô vuông để thí sinh gạch), hãy bỏ ảnh đó khỏi `content_json`.
-    - Nếu không chắc, ưu tiên loại bỏ ảnh trang trí hơn là giữ ảnh không liên quan.
-
-OUTPUT FORMAT:
-[
-    {
-        "question_type": "multiple_choice",
-        "text": "Nội dung câu hỏi",
-        "difficulty": "medium",
-        "options": [
-            {"text": "A", "is_correct": false},
-            {"text": "B", "is_correct": true},
-            {"text": "C", "is_correct": false},
-            {"text": "D", "is_correct": false}
-        ]
-    },
-    {
-        "question_type": "true_false",
-        "text": "Xét các phát biểu sau",
-        "context": "Ngữ cảnh nếu có",
-        "difficulty": "medium",
-        "options": [
-            {"text": "Phát biểu a", "is_correct": true},
-            {"text": "Phát biểu b", "is_correct": false},
-            {"text": "Phát biểu c", "is_correct": true},
-            {"text": "Phát biểu d", "is_correct": false}
-        ]
-    },
-    {
-        "question_type": "short_answer",
-        "text": "Nội dung câu hỏi trả lời ngắn",
-        "difficulty": "hard",
-        "correct_answer_text": "42"
-    }
-]
-"""
-
-# LƯU Ý ẢNH: Khi sinh câu hỏi từ context, KHÔNG chèn các ảnh trang trí hoặc ô vuông/khung để ghi đáp án.
-# Chỉ sử dụng ảnh nếu ảnh trực tiếp hỗ trợ nội dung câu hỏi (ví dụ: sơ đồ, đồ thị, hình thí nghiệm). Nếu ảnh trong context là decorative hoặc dùng cho layout/đáp án, hãy bỏ qua.
 
 # ─── Prompt: Sinh câu hỏi từ tri thức nội bộ (RAG) ──────────────────────────
 RAG_GENERATION_PROMPT_TEMPLATE = """
-Bạn là giáo viên chuyên môn và hệ thống tạo câu hỏi tự động cho NVH Learning.
-Nhiệm vụ: Dựa vào TÀI LIỆU TRÍCH XUẤT được cung cấp, tạo ra {count} câu hỏi chất lượng cao tuân thủ định dạng đề thi THPT 2025.
+Bạn là giáo viên chuyên gia luyện thi THPT Quốc Gia, chuyên tạo câu hỏi theo Format 2025 (Bộ GD&ĐT).
+Nhiệm vụ: Dựa vào TÀI LIỆU TRÍCH XUẤT, tạo {count} câu hỏi chất lượng cao.
 
-YÊU CẦU:
-- Chủ đề / phạm vi: {topic}
-- Số lượng câu hỏi: {count}
-- Độ khó: {difficulty} (Nhận biết/Thông hiểu/Vận dụng)
-- Dạng câu hỏi cần tạo: {question_types}
+PHẠM VI NỘI DUNG:
+- Câu hỏi PHẢI thuộc phạm vi: {topic}
+- Môn học: {subject}
+- Độ khó: {difficulty}
 
-QUY TẮC CỐT LÕI (BẮT BUỘC):
-1. CHỈ dựa trên nội dung trong TÀI LIỆU TRÍCH XUẤT. KHÔNG tự bịa thông tin bên ngoài.
-2. Với dạng "multiple_choice" (Nhiều lựa chọn):
-   - Phần dẫn ngắn gọn, 1 đáp án đúng và 3 đáp án sai đồng nhất về độ dài. Cung cấp Lời giải chi tiết ở trường `explanation`.
-3. Với dạng "true_false" (Đúng/Sai):
-   - BẮT BUỘC PHẢI CÓ Tình huống/Ngữ cảnh (bối cảnh) khoảng 3-10 dòng đặt vào trường `context`. Nếu không có, bạn phải tổng hợp bối cảnh từ tài liệu.
-   - 4 phát biểu a, b, c, d độc lập, thể hiện 3 mức nhận thức: Nhận biết, Thông hiểu, Vận dụng. Học sinh BẮT BUỘC phải đọc `context` mới làm được, không được chung chung.
-   - Cung cấp giải thích chi tiết cho cả 4 ý gộp chung vào trường `explanation` của câu hỏi.
-4. Với dạng "short_answer" (Trả lời ngắn):
-   - Đòi hỏi tính toán hoặc phân tích sâu để ra MỘT CON SỐ CỤ THỂ hoặc một CỤM TỪ cực ngắn cực chuẩn xác.
-   - Bắt buộc điền kết quả vào `correct_answer_text`.
-   - Lời giải được ghi ở `explanation`.
+CẤU TRÚC CHI TIẾT (TUÂN THỦ TUYỆT ĐỐI):
 
-TÀI LIỆU TRÍCH XUẤT:
+1. multiple_choice (Trắc nghiệm 4 lựa chọn):
+   - Có 4 phương án A, B, C, D. Chỉ 1 đáp án đúng.
+   - Các phương án phải đồng nhất về cấu trúc, độ dài và kết thúc bằng dấu chấm (.).
+
+2. true_false (Trắc nghiệm Đúng/Sai):
+   - `context`: Bối cảnh (5-10 dòng) mang tính thực tiễn + 1 câu liên kết.
+   - 4 ý hỏi (a, b, c, d) trong `options` dựa vào bối cảnh.
+
+3. short_answer (Trắc nghiệm trả lời ngắn):
+   - Đáp án là một số cụ thể trong `correct_answer_text`.
+
+ĐỊNH DẠNG JSON ĐẦU RA (BẮT BUỘC):
+Trả về một JSON array, mỗi object bao gồm các trường:
+- "question_type": "multiple_choice", "true_false", hoặc "short_answer"
+- "text": Nội dung câu hỏi (với True/False là câu lệnh hỏi, không bao gồm bối cảnh).
+- "context": (Chỉ dành cho true_false) Bối cảnh tình huống. Với loại khác để null.
+- "options": (Cho multiple_choice và true_false) Array các object {{"text": "...", "is_correct": true/false}}
+- "correct_answer_text": (Chỉ cho short_answer) Đáp án là con số.
+- "difficulty": "{difficulty}"
+- "topic": "{topic}"
+- "subject": "{subject}"
+
+TÀI LIỆU TRÍCH XUẤT (SOURCE):
 {context}
 
-OUTPUT FORMAT BẮT BUỘC (Trả về duy nhất JSON array, không text bên ngoài):
-[
-  {{
-    "question_type": "multiple_choice",
-    "difficulty": "{difficulty}",
-    "text": "Nội dung phần dẫn câu hỏi trắc nghiệm?",
-    "explanation": "Giải thích chi tiết vì sao đáp án này đúng và các đáp án khác sai...",
-    "options": [
-      {{"text": "Phương án A", "is_correct": true}},
-      {{"text": "Phương án B", "is_correct": false}},
-      {{"text": "Phương án C", "is_correct": false}},
-      {{"text": "Phương án D", "is_correct": false}}
-    ]
-  }},
-  {{
-    "question_type": "true_false",
-    "difficulty": "{difficulty}",
-    "context": "Nội dung bối cảnh/ngữ cảnh thực tế bắt buộc phải có để học sinh tư duy (3-10 dòng).",
-    "text": "Xét các phát biểu sau:",
-    "explanation": "a) Sai vì... b) Đúng vì... c) Đúng vì... d) Sai vì...",
-    "options": [
-      {{"text": "Phát biểu a (Nhận biết)", "is_correct": true}},
-      {{"text": "Phát biểu b (Thông hiểu)", "is_correct": false}},
-      {{"text": "Phát biểu c (Vận dụng)", "is_correct": true}},
-      {{"text": "Phát biểu d (Vận dụng cao)", "is_correct": false}}
-    ]
-  }},
-  {{
-    "question_type": "short_answer",
-    "difficulty": "{difficulty}",
-    "text": "Nội dung câu hỏi yêu cầu tính toán hoặc phân tích:",
-    "correct_answer_text": "42",
-    "explanation": "Giải thích từng bước tính toán để ra kết quả 42..."
-  }}
-]
+YÊU CẦU: Trả về DUY NHẤT một JSON array. Không được tự bịa kiến thức ngoài tài liệu.
 """
+
 
 
 class AIGeneratorService:
@@ -245,6 +152,12 @@ class AIGeneratorService:
         # 1) Parse trực tiếp nếu response đã là JSON thuần.
         try:
             parsed = json.loads(clean_text)
+            # Kiểm tra nếu AI trả về lỗi thay vì danh sách câu hỏi
+            if isinstance(parsed, dict) and 'error' in parsed:
+                print(f"--- AI RETURNED ERROR: {parsed['error']} ---")
+                # Nếu là lỗi "tài liệu quá dài", ta có thể coi như không có câu hỏi nào được trích xuất
+                return []
+            
             parsed_list = AIGeneratorService._extract_question_list_from_parsed(parsed)
             if parsed_list:
                 return parsed_list
@@ -273,10 +186,6 @@ class AIGeneratorService:
             except json.JSONDecodeError:
                 pass
 
-        print("--- FAILED TO PARSE AI JSON ---")
-        print(f"Raw Text: {text[:1200]}...")
-        print("------------------------------------")
-
         # 4) Fallback: cố gắng sửa JSON bị cắt.
         repaired = AIGeneratorService._repair_truncated_json(clean_text)
         if repaired:
@@ -288,6 +197,10 @@ class AIGeneratorService:
                     return parsed_list
             except json.JSONDecodeError:
                 pass
+
+        print(f"--- FAILED TO PARSE AI JSON. RAW TEXT (first 2000 chars): ---")
+        print(text[:2000])
+        print("--- END RAW TEXT ---")
 
         return []
 
@@ -391,12 +304,6 @@ class AIGeneratorService:
         return ' '.join(parts).strip()
 
     @staticmethod
-    def _has_image_block(blocks: Any) -> bool:
-        if not isinstance(blocks, list):
-            return False
-        return any(isinstance(b, dict) and b.get('type') == 'image' for b in blocks)
-
-    @staticmethod
     def _is_content_block(item: Any) -> bool:
         if not isinstance(item, dict):
             return False
@@ -420,6 +327,9 @@ class AIGeneratorService:
     @staticmethod
     def _to_question_from_blocks(blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
         # Fallback: khi model trả về content blocks thay vì question objects.
+        # The provided snippet seems to be a malformed attempt to define a question item.
+        # Assuming the intent was to return a default question structure based on blocks.
+        # The original code is kept as it is syntactically correct and functional.
         return {
             'question_type': 'short_answer',
             'difficulty': 'medium',
@@ -520,11 +430,24 @@ class AIGeneratorService:
         return [AIGeneratorService._to_question_from_blocks(blocks)]
 
     @staticmethod
-    def _compact_blocks_for_prompt(blocks: List[Dict[str, Any]], max_blocks: int = 1400) -> List[Dict[str, Any]]:
+    def _compact_blocks_for_prompt(blocks: List[Dict[str, Any]], max_blocks: int = 2500) -> List[Dict[str, Any]]:
         """
-        Giảm token đầu vào bằng cách chỉ giữ field cần thiết cho model.
-        V3: Loại `url` khỏi image block — giảm đáng kể input token.
+        Giảm token đầu vào: loại bỏ noise (header/footer lặp lại), tăng giới hạn ký tự.
         """
+        if not blocks:
+            return []
+
+        # 1. Phát hiện và loại bỏ noise (header/footer lặp lại nhiều lần)
+        text_counts = {}
+        for b in blocks:
+            if b.get('type') == 'text':
+                val = str(b.get('value', '')).strip()
+                if len(val) > 10: # Chỉ xét các dòng đủ dài
+                    text_counts[val] = text_counts.get(val, 0) + 1
+        
+        # Những dòng xuất hiện > 2 lần thường là header/footer
+        noise_texts = {txt for txt, count in text_counts.items() if count > 2}
+
         compact = []
         for b in blocks:
             if not isinstance(b, dict):
@@ -532,17 +455,21 @@ class AIGeneratorService:
             b_type = b.get('type')
             if b_type == 'text':
                 raw_val = b.get('value') or ''
-                if not str(raw_val).strip():
+                clean_val = str(raw_val).strip()
+                
+                # Filter noise
+                if not clean_val or clean_val in noise_texts:
                     continue
-                # Giữ xuống dòng để model nhận diện ranh giới câu hỏi tốt hơn.
+                # Bỏ qua các dòng chỉ là số trang (ví dụ: "Trang 1/4")
+                if re.match(r'^trang\s*\d+\s*(?:/\s*\d+)?$', clean_val, re.IGNORECASE):
+                    continue
+
                 item = {'type': 'text', 'value': raw_val}
-                # Giữ lại fmt nếu có — đây là tín hiệu đáp án đúng quan trọng
                 fmt = b.get('fmt')
                 if fmt:
                     item['fmt'] = fmt
                 compact.append(item)
             elif b_type == 'image':
-                # QUAN TRỌNG: Bỏ `url` — chỉ giữ sha256 + kích thước để model biết ảnh ở đây.
                 item = {'type': 'image', 'sha256': b.get('sha256')}
                 if b.get('width_pt') is not None:
                     item['width_pt'] = b.get('width_pt')
@@ -550,48 +477,38 @@ class AIGeneratorService:
                     item['height_pt'] = b.get('height_pt')
                 compact.append(item)
 
-        # Truncate by character count first (OpenAI 128k context roughly 500k chars)
-        # We aim for ~350k chars of SOURCE to leave room for prompt and output.
-        MAX_TOTAL_CHARS = 350000
+        # Final check: total character length of serialized JSON
+        # Increased limit: 600k JSON chars is roughly safe for 128k token models (~512k chars total prompt)
+        MAX_TOTAL_CHARS = 600000
         
-        # Determine how many blocks we can keep from the head and tail
+        # Smart Truncation: Keep head and tail (answer table)
         if len(compact) > max_blocks:
-            # Ưu tiên lấy phần cuối nếu có bảng đáp án
             answer_tbl_idx = [
                 i for i, it in enumerate(compact)
-                if isinstance(it, dict)
-                and it.get('type') == 'text'
-                and '[BẢNG ĐÁP ÁN]' in str(it.get('value', '')).upper()
+                if it.get('type') == 'text' and '[BẢNG ĐÁP ÁN]' in str(it.get('value', '')).upper()
             ]
             if answer_tbl_idx:
-                tail_start = max(0, answer_tbl_idx[-1] - 40)
+                tail_start = max(0, answer_tbl_idx[-1] - 50) # Keep 50 blocks before table
                 tail = compact[tail_start:]
                 head_slots = max_blocks - len(tail)
-                if head_slots <= 0:
+                if head_slots <= 100: # Not enough room for head
                     compact = tail[-max_blocks:]
                 else:
                     compact = compact[:head_slots] + tail
             else:
                 compact = compact[:max_blocks]
 
-        # Final check: total character length of serialized JSON
+        # Cumulative truncation by characters
         final_compact = []
         current_chars = 0
-        
-        # We process from both ends? No, let's just do a simple cumulative limit for now.
-        # If it's too long, we truncate.
-        serialized_test = json.dumps(compact, ensure_ascii=False)
-        if len(serialized_test) <= MAX_TOTAL_CHARS:
-            return compact
-
-        print(f"[compact] SOURCE JSON length ({len(serialized_test)}) exceeds {MAX_TOTAL_CHARS}. Further truncating...")
         for b in compact:
             item_str = json.dumps(b, ensure_ascii=False)
-            if current_chars + len(item_str) + 2 > MAX_TOTAL_CHARS: # +2 for comma/bracket
+            if current_chars + len(item_str) + 2 > MAX_TOTAL_CHARS:
                 break
             final_compact.append(b)
             current_chars += len(item_str) + 2
             
+        print(f"[compact] SOURCE JSON: {len(blocks)} blocks -> {len(final_compact)} blocks ({current_chars} chars).")
         return final_compact
 
     @staticmethod
@@ -619,11 +536,21 @@ class AIGeneratorService:
         q_type = str(raw_type or 'multiple_choice').strip().lower()
         if q_type in ('multiple_choice', 'mcq', 'multiple-choice', 'multiple choice', 'trac_nghiem'):
             return 'multiple_choice'
-        if q_type in ('true_false', 'true-false', 'true false', 'dung_sai', 'đúng_sai'):
+        if q_type in ('true_false', 'true-false', 'true false', 'dung_sai', 'đúng_sai', 'trac_nghiem_dung_sai'):
             return 'true_false'
-        if q_type in ('short_answer', 'short-answer', 'short answer', 'tu_luan_ngan'):
+        if q_type in ('short_answer', 'short-answer', 'short answer', 'tu_luan_ngan', 'dien_so', 'tra_loi_ngan'):
             return 'short_answer'
         return 'multiple_choice'
+
+    @staticmethod
+    def _clean_option_text(text: str) -> str:
+        """Loại bỏ nhãn phương án dư thừa ở đầu (A., B., 1., a)...)"""
+        import re
+        if not text: return ""
+        # Regex khớp với: A. hoặc A) hoặc A/ hoặc (A) ở đầu chuỗi (không phân biệt hoa thường)
+        # Các nhãn có thể là A-D hoặc a-d hoặc 1-4
+        cleaned = re.sub(r'^([A-Da-d1-4])[\.\)\/\-\s]+\s*', '', text.strip())
+        return cleaned.strip()
 
     @staticmethod
     def _coerce_options(options_raw: Any) -> List[Dict[str, Any]]:
@@ -655,7 +582,7 @@ class AIGeneratorService:
         return []
 
     @staticmethod
-    def _normalize_questions(raw_questions: List[Dict]) -> List[Dict]:
+    def _normalize_questions(raw_questions: List[Dict], images_map: Dict[str, str] = None) -> List[Dict]:
         """
         Chuẩn hoá output — đảm bảo mỗi câu hỏi tuân thủ format thống nhất
         để frontend và bulk-save logic xử lý được.
@@ -698,6 +625,8 @@ class AIGeneratorService:
                 'text': q_text,
                 'image': q.get('image', ''),
                 'difficulty': q.get('difficulty', 'medium'),
+                'topic': q.get('topic', ''),
+                'subject': q.get('subject', ''),
                 'context': q.get('context', ''),
                 'correct_answer_text': (
                     q.get('correct_answer_text')
@@ -712,7 +641,8 @@ class AIGeneratorService:
                 raw_opts = AIGeneratorService._coerce_options(
                     q.get('options', q.get('choices', q.get('answers', [])))
                 )
-
+                
+                seen_option_texts = set()
                 for opt in raw_opts:
                     opt_content = opt.get('content_json', [])
                     if not isinstance(opt_content, list):
@@ -721,10 +651,21 @@ class AIGeneratorService:
                     opt_text = (opt.get('text') or '').strip()
                     if not opt_text:
                         opt_text = AIGeneratorService._blocks_to_text(opt_content)
+                    
+                    # CLEAN LABEL (Remove A. B. C. D. from text if exists)
+                    opt_text = AIGeneratorService._clean_option_text(opt_text)
+                    
+                    # DEDUPLICATION: Skip if option text already seen
+                    norm_opt_text = opt_text.lower()
+                    if norm_opt_text in seen_option_texts and norm_opt_text != "":
+                        print(f"[normalize] Removed duplicate option: '{opt_text}'")
+                        continue
+                    seen_option_texts.add(norm_opt_text)
 
                     if not opt_content and opt_text:
                         opt_content = [{'type': 'text', 'value': opt_text}]
 
+                    # No more image healing needed here either
                     item['options'].append({
                         'content_json': opt_content,
                         'text': opt_text,
@@ -753,9 +694,9 @@ class AIGeneratorService:
                     if '_label' in o:
                         o.pop('_label', None)
 
-            # Bỏ qua câu không có stem text và cũng không có ảnh trong stem.
-            if not item['text'] and not AIGeneratorService._has_image_block(item['content_json']):
-                print(f"[normalize] Skipped item {idx}: no text stem and no image block. Keys in raw: {list(q.keys())}")
+            # Bỏ qua câu không có văn bản.
+            if not item['text']:
+                print(f"[normalize] Skipped item {idx}: no text stem. Keys in raw: {list(q.keys())}")
                 skipped += 1
                 continue
 
@@ -777,6 +718,8 @@ class AIGeneratorService:
         try:
             if ext == '.docx':
                 response, images_map = cls._extract_docx(file_path, subject_name=subject_name)
+            elif ext == '.pdf':
+                response, images_map = cls._extract_pdf(file_path, subject_name=subject_name)
             else:
                 response = cls._extract_generic(file_path, subject_name=subject_name)
             
@@ -785,7 +728,7 @@ class AIGeneratorService:
             if not questions: raise ValueError("AI trả về dữ liệu không đúng JSON array.")
             if cls._looks_like_content_blocks_list(questions):
                 questions = cls._fallback_questions_from_blocks(questions)
-            normalized = cls._normalize_questions(questions)
+            normalized = cls._normalize_questions(questions, images_map=images_map)
             if len(normalized) == 1:
                 only = normalized[0]
                 if only.get('question_type') == 'short_answer' and not only.get('options'):
@@ -813,11 +756,32 @@ class AIGeneratorService:
         except Exception as e: raise ValueError(f"Lỗi DOCX: {e}")
 
     @classmethod
+    def _extract_pdf(cls, file_path: str, subject_name: str = ""):
+        """Trích xuất PDF - Chỉ lấy văn bản."""
+        import fitz
+        content_lines = []
+        try:
+            doc = fitz.open(file_path)
+            for page in doc:
+                content_lines.append(page.get_text())
+            doc.close()
+            
+            compact_text_source = "\n".join(content_lines)
+            prompt = f"Nội dung PDF. Môn: {subject_name or 'Tự động'}.\n\nSOURCE:\n{compact_text_source}"
+            
+            class _FR:
+                def __init__(self, t): self.text = t
+            resp = ai_client.generate_content([EXTRACTION_PROMPT, prompt], model=FILE_EXTRACTION_MODEL, config=GENERATION_CONFIG_JSON_STRICT)
+            return _FR(resp.text), {}
+        except Exception as e:
+            raise ValueError(f"Lỗi PDF: {e}")
+
+    @classmethod
     def _extract_generic(cls, file_path: str, subject_name: str = ""):
         """PDF/Image - Single-pass."""
         uploaded_file = ai_client.upload_file(path=file_path)
         try:
-            parts = [EXTRACTION_PROMPT_GENERIC, uploaded_file]
+            parts = [EXTRACTION_PROMPT, uploaded_file]
             if subject_name: parts.append(f"\nMôn: {subject_name}")
             return ai_client.generate_content(parts, model=FILE_EXTRACTION_MODEL, config=GENERATION_CONFIG_JSON_STRICT)
         finally:
@@ -831,15 +795,48 @@ class AIGeneratorService:
     def generate_from_rag(cls, topic: str, count: int, difficulty: str, class_id: str, question_types: str = 'multiple_choice', document_id: int = None):
         """Sinh câu hỏi từ RAG."""
         from ai_core.models import DocumentChunk
+        from classes.models import Class
         from pgvector.django import L2Distance
+        
+        # 1. Retrieve subject info
+        try:
+            classroom = Class.objects.select_related('subject').get(id=class_id)
+            subject_name = classroom.subject.name
+        except Class.DoesNotExist:
+            subject_name = "Tự động"
+
+        # 2. Vector Search
         query_emb = ai_client.embed_content(content=topic, task_type="RETRIEVAL_QUERY", output_dimensionality=768)
         qs = DocumentChunk.objects.filter(document__classroom_id=class_id)
         if document_id: qs = qs.filter(document_id=document_id)
         chunks = qs.annotate(dist=L2Distance('embedding', query_emb)).order_by('dist')[:20]
+        
         context = cls._build_rag_context(list(chunks))
         if not context.strip(): raise ValueError("Lớp chưa có tài liệu.")
-        prompt = RAG_GENERATION_PROMPT_TEMPLATE.format(count=count, topic=topic, difficulty=difficulty, question_types=question_types, context=context)
-        resp = ai_client.generate_content(prompt, model=RAG_GENERATION_MODEL, config=GENERATION_CONFIG_RAG)
+
+        # 3. Dynamic Prompt refinement based on question_types
+        type_instructions = ""
+        if question_types == 'multiple_choice':
+            type_instructions = "CHỈ tạo duy nhất loại: 1. multiple_choice (PHẦN I)."
+        elif question_types == 'true_false':
+            type_instructions = "CHỈ tạo duy nhất loại: 2. true_false (PHẦN II)."
+        elif question_types == 'short_answer':
+            type_instructions = "CHỈ tạo duy nhất loại: 3. short_answer (PHẦN III)."
+        else:
+            type_instructions = "Bạn có thể tạo hỗn hợp cả 3 loại: multiple_choice, true_false, và short_answer nếu thấy phù hợp."
+
+        full_prompt = RAG_GENERATION_PROMPT_TEMPLATE.format(
+            count=count, 
+            topic=topic, 
+            difficulty=difficulty, 
+            context=context,
+            subject=subject_name
+        )
+        # Append specific type constraint if requested
+        if type_instructions:
+            full_prompt += f"\nLƯU Ý QUAN TRỌNG: {type_instructions}"
+
+        resp = ai_client.generate_content(full_prompt, model=RAG_GENERATION_MODEL, config=GENERATION_CONFIG_RAG)
         return cls._normalize_questions(cls._parse_model_json(resp.text))
 
     @classmethod

@@ -31,19 +31,64 @@ function checkStrength(val) {
     fill.style.background = lv.c;
     text.textContent = lv.l;
     text.style.color = lv.c;
+    return score;
+}
+
+function showFieldError(fieldId, msg) {
+    const errEl = document.getElementById(`err_${fieldId}`);
+    const inputEl = document.getElementById(fieldId);
+    if (errEl) {
+        errEl.textContent = msg;
+        errEl.classList.remove('d-none');
+    }
+    if (inputEl) {
+        inputEl.classList.add('is-invalid');
+    }
+}
+
+function clearFieldErrors() {
+    document.querySelectorAll('.text-danger').forEach(el => {
+        if (el.id && el.id.startsWith('err_')) {
+            el.textContent = '';
+            el.classList.add('d-none');
+        }
+    });
+    document.querySelectorAll('.form-control').forEach(el => {
+        el.classList.remove('is-invalid');
+    });
+    const regErr = document.getElementById('registerError');
+    if (regErr) regErr.classList.add('d-none');
 }
 
 // Attach login form submission
 document.addEventListener('DOMContentLoaded', () => {
+    // Real-time validation for registration
+    const regFields = ['first_name', 'last_name', 'reg_email', 'reg_username', 'reg_password'];
+    regFields.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', () => {
+                el.classList.remove('is-invalid');
+                const err = document.getElementById(`err_${id}`);
+                if (err) err.classList.add('d-none');
+            });
+        }
+    });
+
     const loginForm = document.getElementById('loginForm');
     if (loginForm) {
         loginForm.onsubmit = async function(e) {
             e.preventDefault();
             const errEl = document.getElementById('loginError');
-            errEl.classList.add('d-none');
-            document.getElementById('loginBtnText').classList.add('d-none');
-            document.getElementById('loginBtnSpinner').classList.remove('d-none');
-            document.getElementById('loginBtn').disabled = true;
+            if (errEl) errEl.classList.add('d-none');
+            
+            const btnText = document.getElementById('loginBtnText');
+            const btnSpinner = document.getElementById('loginBtnSpinner');
+            const btn = document.getElementById('loginBtn');
+            
+            if (btnText) btnText.classList.add('d-none');
+            if (btnSpinner) btnSpinner.classList.remove('d-none');
+            if (btn) btn.disabled = true;
         
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
@@ -57,19 +102,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (res.ok && data.access) {
                     localStorage.setItem('access', data.access);
                     localStorage.setItem('refresh', data.refresh);
+                    localStorage.removeItem('user_profile');
                     sessionStorage.setItem('globalAlert', JSON.stringify({msg: '✅ Đã đăng nhập thành công!', type: 'success'}));
                     window.location.href = '/dashboard/';
                 } else {
-                    errEl.textContent = data.detail || 'Tên đăng nhập hoặc mật khẩu không đúng.';
-                    errEl.classList.remove('d-none');
+                    if (errEl) {
+                        errEl.textContent = data.detail || 'Tên đăng nhập hoặc mật khẩu không đúng.';
+                        errEl.classList.remove('d-none');
+                    }
                 }
             } catch (e) {
-                errEl.textContent = 'Lỗi kết nối máy chủ. Vui lòng thử lại.';
-                errEl.classList.remove('d-none');
+                if (errEl) {
+                    errEl.textContent = 'Lỗi kết nối máy chủ. Vui lòng thử lại.';
+                    errEl.classList.remove('d-none');
+                }
             }
-            document.getElementById('loginBtnText').classList.remove('d-none');
-            document.getElementById('loginBtnSpinner').classList.add('d-none');
-            document.getElementById('loginBtn').disabled = false;
+            if (btnText) btnText.classList.remove('d-none');
+            if (btnSpinner) btnSpinner.classList.add('d-none');
+            if (btn) btn.disabled = false;
         };
     }
 
@@ -77,19 +127,45 @@ document.addEventListener('DOMContentLoaded', () => {
     if (registerForm) {
         registerForm.onsubmit = async function(e) {
             e.preventDefault();
-            const errEl = document.getElementById('registerError');
-            errEl.classList.add('d-none');
+            clearFieldErrors();
+
+            const firstName = document.getElementById('first_name').value.trim();
+            const lastName = document.getElementById('last_name').value.trim();
+            const email = document.getElementById('reg_email').value.trim();
+            const username = document.getElementById('reg_username').value.trim();
+            const password = document.getElementById('reg_password').value;
+            
+            let isValid = true;
+
+            if (!lastName) { showFieldError('last_name', 'Vui lòng nhập họ.'); isValid = false; }
+            if (!firstName) { showFieldError('first_name', 'Vui lòng nhập tên.'); isValid = false; }
+            
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!email) { showFieldError('reg_email', 'Vui lòng nhập email.'); isValid = false; }
+            else if (!emailRegex.test(email)) { showFieldError('reg_email', 'Email không đúng định dạng.'); isValid = false; }
+
+            if (!username) { showFieldError('reg_username', 'Vui lòng nhập tên đăng nhập.'); isValid = false; }
+            else if (username.length < 3) { showFieldError('reg_username', 'Tên đăng nhập phải có ít nhất 3 ký tự.'); isValid = false; }
+            else if (!/^[a-zA-Z0-9_]+$/.test(username)) { showFieldError('reg_username', 'Tên đăng nhập chỉ chứa chữ cái, số và dấu gạch dưới.'); isValid = false; }
+
+            const pwdScore = checkStrength(password);
+            if (!password) { showFieldError('reg_password', 'Vui lòng nhập mật khẩu.'); isValid = false; }
+            else if (password.length < 8) { showFieldError('reg_password', 'Mật khẩu phải có ít nhất 8 ký tự.'); isValid = false; }
+            else if (pwdScore < 3) { showFieldError('reg_password', 'Mật khẩu quá yếu. Hãy dùng thêm chữ hoa, số và ký tự đặc biệt.'); isValid = false; }
+
+            if (!isValid) return;
+
             document.getElementById('regBtnText').classList.add('d-none');
             document.getElementById('regBtnSpinner').classList.remove('d-none');
             document.getElementById('regBtn').disabled = true;
         
             const roleEl = document.querySelector('input[name="role"]:checked');
             const payload = {
-                email: document.getElementById('reg_email').value,
-                username: document.getElementById('reg_username').value,
-                password: document.getElementById('reg_password').value,
-                first_name: document.getElementById('first_name').value,
-                last_name: document.getElementById('last_name').value,
+                email,
+                username,
+                password,
+                first_name: firstName,
+                last_name: lastName,
                 role_name: roleEl ? roleEl.value : 'student',
             };
             try {
@@ -103,13 +179,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     window.location.href = '/login/';
                 } else {
                     const data = await res.json();
-                    const msgs = Object.values(data).flat().join(' • ');
-                    errEl.textContent = msgs || 'Đăng ký thất bại. Vui lòng kiểm tra lại thông tin.';
-                    errEl.classList.remove('d-none');
+                    const errEl = document.getElementById('registerError');
+                    if (data.username) showFieldError('reg_username', data.username.join(' '));
+                    if (data.email) showFieldError('reg_email', data.email.join(' '));
+                    
+                    if (errEl && !data.username && !data.email) {
+                        const msgs = Object.values(data).flat().join(' • ');
+                        errEl.textContent = msgs || 'Đăng ký thất bại. Vui lòng kiểm tra lại thông tin.';
+                        errEl.classList.remove('d-none');
+                    }
                 }
             } catch (e) {
-                errEl.textContent = 'Lỗi kết nối máy chủ.';
-                errEl.classList.remove('d-none');
+                const errEl = document.getElementById('registerError');
+                if (errEl) {
+                    errEl.textContent = 'Lỗi kết nối máy chủ.';
+                    errEl.classList.remove('d-none');
+                }
             }
             document.getElementById('regBtnText').classList.remove('d-none');
             document.getElementById('regBtnSpinner').classList.add('d-none');

@@ -1,0 +1,119 @@
+<!-- Modal: Shared Question Editor -->
+<div class="modal fade" id="sharedQuestionModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-gradient-primary text-white" id="sharedQuestionModalHeader">
+                <h5 class="modal-title" id="sharedQuestionModalTitle">Soạn thảo câu hỏi</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body bg-light">
+                <form id="sharedQuestionForm">
+                    <div class="row g-4">
+                        <div class="col-md-12">
+                            <div class="card border-0 shadow-sm h-100">
+                                <div class="card-body">
+                                    <div class="row mb-3">
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-bold">Môn học</label>
+                                            <select id="editorSubject" class="form-select form-select-sm" required>
+                                                <!-- Populated by JS -->
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-bold">Độ khó</label>
+                                            <select id="editorDiff" class="form-select form-select-sm">
+                                                <option value="easy">Nhận biết</option>
+                                                <option value="medium" selected>Thông hiểu</option>
+                                                <option value="hard">Vận dụng</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-bold">Dạng câu hỏi</label>
+                                            <select id="editorType" class="form-select form-select-sm">
+                                                <option value="multiple_choice" selected>Trắc nghiệm (1 Lựa chọn)</option>
+                                                <option value="true_false">Đúng / Sai (4 phát biểu)</option>
+                                                <option value="short_answer">Trả lời ngắn (Điền từ)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="row g-3 mb-4">
+                                        <div class="col-md-6 border-end">
+                                            <label class="form-label fw-bold text-primary">
+                                                <i class="bi bi-pencil-square me-1"></i>Nội dung câu hỏi
+                                            </label>
+                                            <textarea id="editorText" name="editorText" class="form-control" 
+                                                style="height: 350px; resize: none; font-family: inherit; font-size: 1.1rem; border: none; background: #fff;" 
+                                                placeholder="Nhập nội dung câu hỏi..."></textarea>
+                                        </div>
+                                        <div class="col-md-6 bg-white rounded-end" style="height: 350px; overflow-y: auto;">
+                                            <label class="form-label fw-bold text-success small mb-2">
+                                                <i class="bi bi-eye me-1"></i>Xem trước
+                                            </label>
+                                            <hr class="my-1 opacity-10">
+                                            <div id="editorPreview" class="p-2 question-rendered-content">
+                                                <span class="text-muted small">Bắt đầu nhập để xem trước...</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mb-3" id="editorContextWrapper" style="display: none;">
+                                        <label class="form-label fw-bold">Ngữ cảnh (dùng cho dạng Đúng/Sai)</label>
+                                        <textarea id="editorContext" class="form-control" rows="3"
+                                            placeholder="Nhập đoạn văn, ngữ cảnh chung cho 4 câu hỏi con..."></textarea>
+                                    </div>
+
+                                    <!-- Image Gallery moved here -->
+                                    <div class="mb-4">
+                                        <div class="d-flex align-items-center justify-content-between mb-2">
+                                            <label class="form-label fw-bold mb-0"><i class="bi bi-images me-2"></i>Kho ảnh đính kèm</label>
+                                            <div class="d-flex gap-2">
+                                                <input type="file" id="editorImageFile" class="form-control form-control-sm d-inline-block" style="width: 200px;" accept="image/*">
+                                                <button class="btn btn-sm btn-outline-primary" type="button" id="btnEditorUploadImage">
+                                                    <i class="bi bi-cloud-upload me-1"></i>Tải lên
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div id="editorImageStatus" class="small mb-2"></div>
+                                        <div id="editorImageList" class="border rounded p-3 d-flex flex-wrap gap-3"
+                                            style="min-height: 80px; max-height: 300px; overflow-y: auto; background: #f8fafc;">
+                                            <div class="text-muted small">Lưu câu hỏi trước khi quản lý ảnh.</div>
+                                        </div>
+                                    </div>
+
+                                    <label class="form-label fw-bold mb-2">
+                                        <i class="bi bi-check2-square me-2"></i>Các phương án / Đáp án
+                                    </label>
+                                    <div id="editorOptionsContainer" class="bg-light p-3 rounded border">
+                                        <!-- Dynamic Content -->
+                                    </div>
+
+                                    <div id="editorError" class="text-danger small mt-2"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <div class="form-check me-auto" id="editorAddQuizWrap" style="display: none;">
+                    <input class="form-check-input" type="checkbox" id="editorAddToQuiz" checked>
+                    <label class="form-check-label small" for="editorAddToQuiz">Thêm vào đề thi hiện tại</label>
+                </div>
+                <button type="button" class="btn btn-secondary border" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-primary px-4 shadow-sm" id="btnEditorSave">
+                    <i class="bi bi-check2-circle me-1"></i>Lưu câu hỏi
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.bg-gradient-primary {
+    background: linear-gradient(135deg, var(--color-primary), #6366f1);
+}
+.bg-gradient-success {
+    background: linear-gradient(135deg, #10b981, #059669);
+}
+</style>

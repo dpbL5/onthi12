@@ -245,9 +245,13 @@ class QuestionImageUploadView(APIView):
                 }
             )
 
-        image_url = image_bank.image_file.url if image_bank.image_file else None
-        if image_url and request is not None:
-            image_url = request.build_absolute_uri(image_url)
+        # Determine the correct image URL
+        if image_bank.image_file and image_bank.image_file.name.startswith('http'):
+            image_url = image_bank.image_file.name
+        else:
+            image_url = image_bank.image_file.url if image_bank.image_file else None
+            if image_url and request is not None:
+                image_url = request.build_absolute_uri(image_url)
 
         return Response({
             'sha256': image_bank.sha256,

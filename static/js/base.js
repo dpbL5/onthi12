@@ -33,8 +33,59 @@ function showGlobalAlert(msg, type='success') {
     }, 5000);
 }
 
+// Helper to fetch user with caching
+window.getCurrentUser = async function(forceRefresh = false) {
+    const token = localStorage.getItem('access');
+    if (!token) return null;
+
+    if (!forceRefresh) {
+        const cached = localStorage.getItem('user_profile');
+        if (cached) {
+            try { return JSON.parse(cached); } catch (e) { localStorage.removeItem('user_profile'); }
+        }
+    }
+
+    try {
+        const res = await fetch('/api/accounts/me/', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (res.ok) {
+            const user = await res.json();
+            localStorage.setItem('user_profile', JSON.stringify(user));
+            return user;
+        }
+        if (res.status === 401) doLogout(); // Token expired
+    } catch (e) { console.error('Auth fetch failed', e); }
+    return null;
+};
+
+// Update navbar UI based on user
+window.updateNavbarUI = function(user) {
+    const navAuthLinks = document.getElementById('navAuthLinks');
+    if (!navAuthLinks || !user) return;
+
+    const initials = ((user.last_name || '')[0] || '') + ((user.first_name || '')[0] || user.username[0] || '');
+    const navLinks = [
+        { href: '/dashboard/', icon: 'bi-speedometer2', label: 'Bảng điều khiển' },
+    ];
+    if (user.role?.name !== 'student') {
+        navLinks.push({ href: '/exams/question-bank/', icon: 'bi-bank2', label: 'Ngân hàng câu hỏi' });
+    }
+
+    navAuthLinks.innerHTML = `
+        ${navLinks.map(l => `<a href="${l.href}" class="nav-btn nav-btn-solid"><i class="bi ${l.icon}"></i> ${l.label}</a>`).join('')}
+        <div class="nav-divider"></div>
+        <div class="d-flex align-items-center gap-2 px-2">
+            <div style="width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;color:#fff;">
+                ${initials.toUpperCase()}
+            </div>
+            <span style="font-size:0.82rem;color:rgba(255,255,255,0.85);font-weight:500;">${user.first_name || user.username}</span>
+        </div>
+        <div class="nav-divider"></div>
+        <button class="nav-btn nav-btn-logout" onclick="doLogout()"><i class="bi bi-box-arrow-right"></i> Thoát</button>
+    `;
+};
+
 // Flash from sessionStorage
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     const _alert = sessionStorage.getItem('globalAlert');
     if (_alert) {
         const {msg, type} = JSON.parse(_alert);
@@ -43,35 +94,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Update navbar if logged in
-    const _token = localStorage.getItem('access');
-    if (_token) {
-        // Fetch user info for avatar
-        fetch('/api/accounts/me/', { headers: { 'Authorization': 'Bearer ' + _token } })
-        .then(r => r.ok ? r.json() : null)
-        .then(user => {
-            if (!user) return;
-            const initials = ((user.last_name || '')[0] || '') + ((user.first_name || '')[0] || user.username[0] || '');
-            const roleIcons = { admin: 'bi-shield-check', teacher: 'bi-person-workspace', student: 'bi-mortarboard' };
-            const navLinks = [
-                { href: '/dashboard/', icon: 'bi-speedometer2', label: 'Dashboard' },
-            ];
-            if (user.role?.name !== 'student') {
-                navLinks.push({ href: '/exams/question-bank/', icon: 'bi-bank2', label: 'Ngân hàng' });
-            }
-            document.getElementById('navAuthLinks').innerHTML = `
-                ${navLinks.map(l => `<a href="${l.href}" class="nav-btn nav-btn-solid"><i class="bi ${l.icon}"></i> ${l.label}</a>`).join('')}
-                <div class="nav-divider"></div>
-                <div class="d-flex align-items-center gap-2 px-2">
-                    <div style="width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;color:#fff;">
-                        ${initials.toUpperCase()}
-                    </div>
-                    <span style="font-size:0.82rem;color:rgba(255,255,255,0.85);font-weight:500;">${user.first_name || user.username}</span>
-                </div>
-                <div class="nav-divider"></div>
-                <button class="nav-btn nav-btn-logout" onclick="doLogout()"><i class="bi bi-box-arrow-right"></i> Thoát</button>
-            `;
-        }).catch(() => {});
-    }
+    const user = await getCurrentUser();
+    if (user) updateNavbarUI(user);
 });
 
 async function doLogout() {
@@ -87,6 +111,7 @@ async function doLogout() {
     }
     localStorage.removeItem('access');
     localStorage.removeItem('refresh');
+    localStorage.removeItem('user_profile');
     window.location.href = '/login/';
 }
 

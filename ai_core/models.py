@@ -7,6 +7,8 @@ class Document(models.Model):
     classroom = models.ForeignKey(Class, on_delete=models.CASCADE, related_name='documents')
     title = models.CharField(max_length=255)
     file = models.FileField(upload_to='documents/', null=True, blank=True)
+    cloudinary_public_id = models.CharField(max_length=255, null=True, blank=True)
+    file_url = models.URLField(max_length=500, null=True, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

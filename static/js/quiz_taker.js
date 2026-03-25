@@ -5,57 +5,7 @@ if (!token) window.location.href = '/login/';
 
 function authHeaders() { return {'Content-Type':'application/json','Authorization':'Bearer '+token}; }
 function escapeHtml(s) { return (s||'').toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-function safeEscapeHtmlForMarkdown(text) {
-    if (!text) return '';
-    const parts = (text + '').split(/(`+[\s\S]*?`+)/g);
-    for (let i = 0; i < parts.length; i++) {
-        if (i % 2 === 0) {
-            parts[i] = parts[i].replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        }
-    }
-    return parts.join('');
-}
-
-function buildQuestionImageMap(questionImages) {
-    const map = {};
-    if (!Array.isArray(questionImages)) return map;
-    questionImages.forEach((qi) => {
-        const sha = qi?.image?.sha256;
-        const url = qi?.image?.image_url;
-        if (sha && url) map[sha] = url;
-    });
-    return map;
-}
-
-function blocksToText(blocks) {
-    if (!Array.isArray(blocks)) return '';
-    return blocks
-        .filter((b) => b && b.type === 'text' && typeof b.value === 'string')
-        .map((b) => b.value)
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-}
-
-function renderContentBlocks(blocks, imageMap = {}) {
-    if (!Array.isArray(blocks) || blocks.length === 0) return '';
-    return blocks.map((b) => {
-        if (!b || !b.type) return '';
-        if (b.type === 'text') {
-            return `<span>${escapeHtml(b.value || '')}</span>`;
-        }
-        if (b.type === 'image') {
-            const url = b.url || (b.sha256 ? imageMap[b.sha256] : null);
-            if (url) {
-                return `<img src="${url}" class="img-fluid rounded border my-2 d-block" style="max-height:280px;" alt="Hình câu hỏi">`;
-            }
-            if (b.sha256) {
-                return `<span class="badge bg-light text-dark border">image:${escapeHtml(String(b.sha256).slice(0, 12))}...</span>`;
-            }
-        }
-        return '';
-    }).join(' ');
-}
+// Rendering helpers removed. Using QuestionRenderer.
 
 async function init() {
     try {
@@ -102,30 +52,26 @@ function renderQuestions() {
     container.innerHTML = quizQuestions.map((qq, idx) => {
         const q = qq.question;
         const qType = q.question_type || 'multiple_choice';
-        const imageMap = buildQuestionImageMap(q.question_images || []);
-        const questionText = (q.text || '').trim() || blocksToText(q.content_json || []);
-        const questionBlocksHtml = renderContentBlocks(q.content_json || [], imageMap);
         const typeBadges = {multiple_choice:'<span class="badge" style="background:var(--color-primary-light);color:var(--color-primary);">Trắc nghiệm</span>',true_false:'<span class="badge" style="background:var(--color-info-light);color:var(--color-info);">Đúng / Sai</span>',short_answer:'<span class="badge" style="background:var(--color-warning-light);color:var(--color-warning);">Trả lời ngắn</span>'};
+        
         let contentHtml = '';
         if (qType === 'multiple_choice') {
             const keys = ['A','B','C','D'];
             contentHtml = q.options.map((opt, oi) => {
-                const optText = (opt.text || '').trim() || blocksToText(opt.content_json || []);
-                const optBlocksHtml = renderContentBlocks(opt.content_json || [], imageMap);
+                const optBlocksHtml = QuestionRenderer.renderOption(opt, q.question_images);
                 return `<div class="quiz-option" id="opt_wrap_${opt.id}" onclick="selectMC(${qq.id}, ${opt.id})">
                     <div class="quiz-option-key">${keys[oi]||oi+1}</div>
-                    ${optBlocksHtml && optBlocksHtml.trim() ? `<div class="small">${optBlocksHtml}</div>` : `<span style="font-size:0.9rem;">${escapeHtml(optText)}</span>`}
+                    <div class="small">${optBlocksHtml}</div>
                     <input type="radio" name="qq_${qq.id}" id="opt_${opt.id}" value="${opt.id}" class="d-none">
                 </div>`;
             }).join('');
         } else if (qType === 'true_false') {
             contentHtml = (q.context ? `<div style="background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:1rem;margin-bottom:1rem;font-size:0.875rem;font-style:italic;">${escapeHtml(q.context)}</div>` : '')
                 + q.options.map((opt, i) => {
-                    const optText = (opt.text || '').trim() || blocksToText(opt.content_json || []);
-                    const optBlocksHtml = renderContentBlocks(opt.content_json || [], imageMap);
+                    const optBlocksHtml = QuestionRenderer.renderOption(opt, q.question_images);
                     return `<div style="border:1px solid var(--color-border);border-radius:var(--radius-md);padding:0.875rem 1rem;margin-bottom:0.5rem;display:flex;justify-content:space-between;align-items:center;gap:1rem;">
                         <div style="font-size:0.875rem;flex:1;">
-                            ${optBlocksHtml && optBlocksHtml.trim() ? `<div class="small">${optBlocksHtml}</div>` : `<div>${String.fromCharCode(97+i)}) ${escapeHtml(optText)}</div>`}
+                            <div>${String.fromCharCode(97+i)}) ${optBlocksHtml}</div>
                         </div>
                         <div style="display:flex;gap:0.5rem;flex-shrink:0;">
                             <label class="btn btn-sm btn-outline-success tf-btn" id="tf_${qq.id}_${opt.id}_t" onclick="selectTF(${qq.id},${opt.id},true)"><input type="radio" name="tf_${qq.id}_${opt.id}" value="true" class="d-none">Đúng</label>
@@ -136,6 +82,9 @@ function renderQuestions() {
         } else if (qType === 'short_answer') {
             contentHtml = `<input type="text" class="form-control" id="sa_${qq.id}" placeholder="Nhập đáp án..." oninput="selectSA(${qq.id})"><div class="form-text small">Nhập chính xác kết quả (số, công thức, text...)</div>`;
         }
+
+        const questionHtml = QuestionRenderer.renderStem(q);
+
         return `<div class="animate-in" id="qBlock_${qq.id}" style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);overflow:hidden;" style="animation-delay:${idx*0.04}s">
             <div style="height:4px;background:linear-gradient(90deg,var(--color-primary),var(--color-secondary));"></div>
             <div style="padding:1.5rem;">
@@ -144,9 +93,8 @@ function renderQuestions() {
                     ${typeBadges[qType]||''}
                     <span style="font-size:0.75rem;color:var(--color-muted);">${qq.points} điểm</span>
                 </div>
-                ${questionBlocksHtml && questionBlocksHtml.trim() ? `<div class="mb-4">${questionBlocksHtml}</div>` : `<div class="q-markdown-text mb-3" style="font-size:0.975rem;line-height:1.7;">${marked.parse(safeEscapeHtmlForMarkdown(questionText || ''))}</div>`}
-                ${q.image ? `<div class="text-center mb-4"><img src="${q.image}" class="img-fluid rounded" style="max-height:280px;border:1px solid var(--color-border);" alt="Hình"></div>` : ''}
-                <div>${contentHtml}</div>
+                ${questionHtml}
+                <div class="mt-4">${contentHtml}</div>
             </div>
         </div>`;
     }).join('');
