@@ -23,64 +23,20 @@ from rest_framework import permissions
 from exams.models import Question, Option, Quiz, QuizQuestion
 from exams.views import IsTeacherOrAdmin
 from .services.ai_generator import AIGeneratorService
-from .services import gemini_client
+from .services.ai_provider import get_client
+from .services.cloudinary_service import delete_from_cloudinary
 from django.utils import timezone
 from datetime import timedelta
 
-AI_TUTOR_MODEL = os.environ.get('AI_TUTOR_MODEL_NAME', 'gemma-3-4b-it')
-AI_EXTRACTION_MODEL = os.environ.get('AI_EXTRACTION_MODEL_NAME', 'gemini-flash-latest')
+AI_TUTOR_MODEL = os.environ.get('AI_TUTOR_MODEL_NAME', 'gpt-4.1')
+AI_EXTRACTION_MODEL = os.environ.get('AI_EXTRACTION_MODEL_NAME', 'gpt-4.1')
+ai_client = get_client()
 
 class RAGChatbotView(APIView):
     """
     API Chatbot sử dụng kiến trúc RAG tích hợp file docx giảng dạy của nhà trường.
     """
     permission_classes = [IsAuthenticated]
-
-    CHAT_CONTEXT_MAX_CHARS = 3200
-    CHAT_CHUNK_MAX_CHARS = 600
-    CHAT_RESPONSE_CACHE_TTL = 180
-
-    @staticmethod
-    def _compact_text(text, max_chars=600):
-        if not text:
-            return ''
-        compact = re.sub(r'\s+', ' ', str(text)).strip()
-        if len(compact) <= max_chars:
-            return compact
-        return compact[: max_chars - 3].rstrip() + '...'
-
-    @classmethod
-    def _build_context_and_sources(cls, chunks):
-        contexts = []
-        sources = []
-        seen_doc_titles = set()
-        seen_snippets = set()
-        total_chars = 0
-
-        for chunk in chunks:
-            snippet = cls._compact_text(chunk.content, max_chars=cls.CHAT_CHUNK_MAX_CHARS)
-            if not snippet:
-                continue
-
-            dedupe_key = snippet[:180].lower()
-            if dedupe_key in seen_snippets:
-                continue
-            seen_snippets.add(dedupe_key)
-
-            doc_title = chunk.document.title
-            line = f"Tài liệu [{doc_title}]: {snippet}"
-            projected = total_chars + len(line)
-            if contexts and projected > cls.CHAT_CONTEXT_MAX_CHARS:
-                break
-
-            contexts.append(line)
-            total_chars = projected
-
-            if doc_title not in seen_doc_titles:
-                seen_doc_titles.add(doc_title)
-                sources.append({"doc": doc_title})
-
-        return "\n\n---\n\n".join(contexts), sources
 
     @staticmethod
     def _make_chat_cache_key(class_id, question):
@@ -89,8 +45,8 @@ class RAGChatbotView(APIView):
         return f"ai_tutor:chat:{digest}"
 
     def post(self, request):
-        if not gemini_client.is_configured():
-            return Response({"error": "Chưa cấu hình GEMINI_API_KEY trên server."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        if not ai_client.is_configured():
+            return Response({"error": "Chưa cấu hình AI API key trên server."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         class_id = request.data.get('class_id')
         question = request.data.get('question')
@@ -137,7 +93,7 @@ class RAGChatbotView(APIView):
                 "answer": chatbot_answer,
                 "sources": [{"doc": "Kiến thức nội bộ lớp học"}]
             }
-            cache.set(response_cache_key, payload, timeout=self.CHAT_RESPONSE_CACHE_TTL)
+            cache.set(response_cache_key, payload, timeout=180)
 
             return Response(payload)
 
@@ -224,7 +180,7 @@ YÊU CẦU BÁO CÁO:
 
 BÁO CÁO:
 """
-            response = gemini_client.generate_content(system_prompt)
+            response = ai_client.generate_content(system_prompt)
 
             # Cập nhật đè lên database
             insight, created = ClassInsight.objects.update_or_create(
@@ -289,10 +245,16 @@ class UploadClassDocumentView(APIView):
                 tmp_file_path = tmp_file.name
 
             # CẬP NHẬT: Sử dụng Optimize 1-Shot của AIGeneratorService
+            # Upload lên Cloudinary trước khi tạo record Document
+            from .services.cloudinary_service import upload_to_cloudinary
+            cloudinary_res = upload_to_cloudinary(tmp_file_path, file_name=file_obj.name, resource_type='raw')
+            
             doc_obj = Document.objects.create(
                 classroom=classroom,
                 title=file_obj.name,
-                file_path=file_obj.name
+                file=file_obj,
+                file_url=cloudinary_res.get('secure_url') if cloudinary_res else None,
+                cloudinary_public_id=cloudinary_res.get('public_id') if cloudinary_res else None
             )
 
             try:
@@ -306,6 +268,9 @@ class UploadClassDocumentView(APIView):
                 
                 return Response(response_data, status=status.HTTP_201_CREATED)
             except Exception as ai_err:
+                # Nếu lỗi trích xuất AI, xoá cả bản ghi DB và file trên Cloudinary
+                if doc_obj.cloudinary_public_id:
+                    delete_from_cloudinary(doc_obj.cloudinary_public_id, resource_type='raw')
                 doc_obj.delete()
                 if os.path.exists(tmp_file_path):
                     os.remove(tmp_file_path)
@@ -326,6 +291,10 @@ class DeleteClassDocumentView(APIView):
             
         try:
             doc = Document.objects.get(id=doc_id)
+            # Xoá file trên Cloudinary trước
+            if doc.cloudinary_public_id:
+                delete_from_cloudinary(doc.cloudinary_public_id, resource_type='raw')
+            
             doc.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
         except Document.DoesNotExist:
@@ -357,9 +326,6 @@ class AIExtractFromFileView(APIView):
         import tempfile
         import os
         import traceback as tb
-        import requests
-        import mimetypes
-
         to_process = []
         if files_data and isinstance(files_data, list):
             to_process = files_data
@@ -370,6 +336,23 @@ class AIExtractFromFileView(APIView):
 
         if not to_process:
             return Response({"error": "No files provided."}, status=status.HTTP_400_BAD_REQUEST)
+
+        import requests
+        import mimetypes
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+
+        # Configure retry strategy
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS"]
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        http_session = requests.Session()
+        http_session.mount("https://", adapter)
+        http_session.mount("http://", adapter)
 
         all_questions = []
         all_images_map = {}
@@ -392,7 +375,8 @@ class AIExtractFromFileView(APIView):
                     elif target_file_url:
                         ext = os.path.splitext(target_file_name)[1]
                         with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
-                            resp = requests.get(target_file_url, stream=True)
+                            # Use custom session with retries and timeout
+                            resp = http_session.get(target_file_url, stream=True, timeout=30)
                             resp.raise_for_status()
                             for chunk in resp.iter_content(chunk_size=8192):
                                 tmp_file.write(chunk)
@@ -417,9 +401,47 @@ class AIExtractFromFileView(APIView):
                             os.remove(tmp_file_path)
                         except Exception:
                             pass
+                    
+                    # Cleanup from Cloudinary to save space
+                    p_id = item.get('public_id')
+                    r_type = item.get('resource_type', 'raw')
+                    if p_id:
+                        print(f"Triggering Cloudinary cleanup for {p_id} ({r_type})...")
+                        delete_from_cloudinary(p_id, resource_type=r_type)
+            # DEDUPLICATION LOGIC: Remove duplicate extracted questions
+            unique_questions = []
+            seen_hashes = set()
+            for q in all_questions:
+                # Build a signature for the question to catch duplicates
+                content_json = q.get('content_json', [])
+                
+                text_parts = [(q.get('text') or '').strip()]
+                text_parts.extend([str(b.get('value', '')) for b in content_json if isinstance(b, dict) and b.get('type') == 'text'])
+                text_parts.extend([str(b.get('sha256', '')) for b in content_json if isinstance(b, dict) and b.get('type') == 'image'])
+                
+                if q.get('image'):
+                    text_parts.append(str(q.get('image')))
+                
+                options = q.get('options', [])
+                for opt in options:
+                    opt_content = opt.get('content_json', [])
+                    text_parts.append((opt.get('text') or '').strip())
+                    text_parts.extend([str(b.get('value', '')) for b in opt_content if isinstance(b, dict) and b.get('type') == 'text'])
+                    text_parts.extend([str(b.get('sha256', '')) for b in opt_content if isinstance(b, dict) and b.get('type') == 'image'])
+                    text_parts.append(str(opt.get('is_correct', False)))
+                
+                if q.get('correct_answer_text'):
+                    text_parts.append(str(q.get('correct_answer_text')).strip())
+                    
+                raw_sig = "||".join(text_parts)
+                normalized_sig = re.sub(r'\s+', ' ', raw_sig).strip().lower()
+                sig_hash = hashlib.md5(normalized_sig.encode('utf-8')).hexdigest()
+                
+                if sig_hash not in seen_hashes:
+                    seen_hashes.add(sig_hash)
+                    unique_questions.append(q)
 
-            return Response({"questions": all_questions, "images": all_images_map})
-
+            return Response({"questions": unique_questions, "images": all_images_map})
         except Exception as e:
             tb.print_exc()
             msg = str(e)
@@ -587,23 +609,47 @@ class AIBulkSaveQuestionsView(APIView):
 
         pos = 0
         for block in content_json:
-            if block.get('type') == 'image' and block.get('sha256'):
+            if block.get('type') == 'image':
                 sha256_hash = block.get('sha256')
-                try:
-                    img_bank = ImageBank.objects.get(sha256=sha256_hash)
-                    QuestionImage.objects.get_or_create(
+                direct_url = block.get('url')
+                
+                if sha256_hash:
+                    try:
+                        img_bank = ImageBank.objects.get(sha256=sha256_hash)
+                        QuestionImage.objects.get_or_create(
+                            question=question,
+                            image=img_bank,
+                            position=pos,
+                            placement=placement,
+                            defaults={
+                                'source_type': 'ai_scan',
+                                'uploaded_by': uploaded_by,
+                            },
+                        )
+                        pos += 1
+                    except ImageBank.DoesNotExist:
+                        # Fallback: Nếu không có ImageBank nhưng có URL trong block
+                        if direct_url:
+                            QuestionImage.objects.create(
+                                question=question,
+                                image_url=direct_url,
+                                position=pos,
+                                placement=placement,
+                                source_type='ai_scan',
+                                uploaded_by=uploaded_by
+                            )
+                            pos += 1
+                elif direct_url:
+                    # Trường hợp chỉ có URL (vd: AI sinh từ RAG hoặc URL trực tiếp)
+                    QuestionImage.objects.create(
                         question=question,
-                        image=img_bank,
+                        image_url=direct_url,
                         position=pos,
                         placement=placement,
-                        defaults={
-                            'source_type': 'ai_scan',
-                            'uploaded_by': uploaded_by,
-                        },
+                        source_type='ai_scan',
+                        uploaded_by=uploaded_by
                     )
                     pos += 1
-                except ImageBank.DoesNotExist:
-                    pass # Image might have been deleted or skipped
 
     def _blocks_to_text(self, blocks):
         if not isinstance(blocks, list):

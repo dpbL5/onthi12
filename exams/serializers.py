@@ -41,7 +41,7 @@ class QuestionImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = QuestionImage
         fields = [
-            'id', 'image', 'position', 'placement', 'source_type',
+            'id', 'image', 'image_url', 'position', 'placement', 'source_type',
             'uploaded_by', 'uploaded_by_username', 'note', 'created_at',
         ]
 
@@ -81,6 +81,31 @@ class QuestionSerializer(serializers.ModelSerializer):
             return False
         return any(isinstance(b, dict) and b.get('type') == 'image' for b in blocks)
 
+    def _heal_content_images(self, blocks):
+        """
+        Scan text blocks for [IMG:sha256] and split them into text and image blocks.
+        """
+        if not isinstance(blocks, list): return []
+        import re
+        new_blocks = []
+        img_pattern = re.compile(r'\[IMG:([a-fA-F0-9]{32,64})\]')
+        
+        for b in blocks:
+            if isinstance(b, dict) and b.get('type') == 'text' and b.get('value'):
+                val = str(b.get('value'))
+                last_end = 0
+                for match in img_pattern.finditer(val):
+                    start, end = match.span()
+                    if start > last_end:
+                        new_blocks.append({'type': 'text', 'value': val[last_end:start]})
+                    new_blocks.append({'type': 'image', 'sha256': match.group(1)})
+                    last_end = end
+                if last_end < len(val):
+                    new_blocks.append({'type': 'text', 'value': val[last_end:]})
+            else:
+                new_blocks.append(b)
+        return new_blocks
+
     def validate(self, attrs):
         content_json = self.initial_data.get('content_json') or attrs.get('content_json')
         text = self.initial_data.get('text') or attrs.get('text', '')
@@ -94,18 +119,37 @@ class QuestionSerializer(serializers.ModelSerializer):
 
         attrs['text'] = text
         if content_json is not None:
+             # Heal images in blocks if they contain [IMG:sha] text
+             content_json = self._heal_content_images(content_json)
              attrs['content_json'] = content_json
              
-        attrs['options_data'] = self.initial_data.get('options', [])
-        attrs['images_data'] = self.initial_data.get('question_images', [])
+        # Add to options too
+        opts = self.initial_data.get('options', [])
+        for opt in opts:
+            if 'content_json' in opt:
+                opt['content_json'] = self._heal_content_images(opt['content_json'])
+            elif 'text' in opt:
+                 opt['content_json'] = self._build_content_json_from_text(opt['text'])
+        
+        attrs['options_data'] = opts
+        
+        # Only set images_data if it was explicitly provided to prevent accidental deletion
+        images_data = self.initial_data.get('question_images', self.initial_data.get('images_data'))
+        if images_data is not None:
+             attrs['images_data'] = images_data
+
         return attrs
+
+    def _build_content_json_from_text(self, text):
+        return self._heal_content_images([{'type': 'text', 'value': text}])
 
     def create(self, validated_data):
         options_data = validated_data.pop('options_data', [])
         images_data = validated_data.pop('images_data', [])
+        created_by = validated_data.pop('created_by', None)
         
         request = self.context.get('request')
-        user = request.user if request else None
+        user = created_by or (request.user if request else None)
 
         with transaction.atomic():
             question = Question.objects.create(created_by=user, **validated_data)
@@ -116,6 +160,7 @@ class QuestionSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         options_data = validated_data.pop('options_data', None)
         images_data = validated_data.pop('images_data', None)
+        validated_data.pop('created_by', None) # Don't update creator
         
         request = self.context.get('request')
         user = request.user if request else getattr(instance, 'created_by', None)
@@ -156,27 +201,31 @@ class QuestionSerializer(serializers.ModelSerializer):
             return
         for img in images_data:
             sha256 = img.get('sha256')
-            url = img.get('url')
-            if not sha256:
-                continue
-                
-            img_bank, created = ImageBank.objects.get_or_create(
-                sha256=sha256,
-                defaults={
-                    'original_filename': img.get('original_filename', ''),
-                    'mime_type': 'image/jpeg',
-                    'width_pt': img.get('width_pt'),
-                    'height_pt': img.get('height_pt')
-                }
-            )
+            url = img.get('url') or img.get('image_url')
             
-            if url and (created or not img_bank.image_file or not img_bank.image_file.name.startswith('http')):
-                img_bank.image_file.name = url
-                img_bank.save()
+            img_bank = None
+            if sha256:
+                img_bank, created = ImageBank.objects.get_or_create(
+                    sha256=sha256,
+                    defaults={
+                        'original_filename': img.get('original_filename', ''),
+                        'mime_type': 'image/jpeg',
+                        'width_pt': img.get('width_pt'),
+                        'height_pt': img.get('height_pt')
+                    }
+                )
+                
+                if url and (created or not img_bank.image_file or not img_bank.image_file.name.startswith('http')):
+                    img_bank.image_file.name = url
+                    img_bank.save()
+
+            if not img_bank and not url:
+                continue
 
             QuestionImage.objects.create(
                 question=question,
                 image=img_bank,
+                image_url=url if not img_bank else None,
                 placement=img.get('placement', 'stem'),
                 position=int(img.get('position', 0)),
                 source_type=img.get('source_type', 'user_upload'),

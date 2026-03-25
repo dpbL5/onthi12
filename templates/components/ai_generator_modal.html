@@ -55,12 +55,6 @@
                                 <div class="d-flex justify-content-between align-items-center mb-3">
                                     <h6 class="fw-bold mb-0">Kết quả Trích xuất (Dạng Nháp)</h6>
                                     <div class="mt-3 d-flex justify-content-between align-items-center">
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" role="switch" id="saveToQuizFile" checked>
-                                            <label class="form-check-label small fw-semibold" for="saveToQuizFile">
-                                                <i class="bi bi-journal-plus me-1 text-primary"></i>Lưu vào đề thi này
-                                            </label>
-                                        </div>
                                         <div>
                                         <button class="btn btn-sm btn-outline-secondary me-2" onclick="selectAllDrafts('file')">Chọn tất cả</button>
                                         <button class="btn btn-sm btn-success" id="btnSaveDraftsFile" onclick="saveSelectedDrafts('file')" style="display:none">
@@ -125,11 +119,9 @@
                                     <div class="mb-3">
                                         <label class="form-label fw-bold small">Dạng câu hỏi muốn tạo</label>
                                         <select class="form-select" id="ragQuestionTypes">
-                                            <option value="multiple_choice">Trắc nghiệm (chọn 1/4)</option>
+                                            <option value="multiple_choice" selected>Trắc nghiệm (chọn 1/4)</option>
                                             <option value="true_false">Đúng / Sai</option>
                                             <option value="short_answer">Trả lời ngắn</option>
-                                            <option value="multiple_choice, true_false" selected>Hỗn hợp (Trắc nghiệm + Đ/S)</option>
-                                            <option value="multiple_choice, true_false, short_answer">Tất cả dạng</option>
                                         </select>
                                     </div>
                                     <button type="submit" class="btn btn-success w-100" id="btnGenerateRAG">
@@ -146,12 +138,6 @@
                                 <div class="d-flex justify-content-between align-items-center mb-3">
                                     <h6 class="fw-bold mb-0">Kết quả Sinh Câu Hỏi (Dạng Nháp)</h6>
                                     <div class="mt-3 d-flex justify-content-between align-items-center">
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" role="switch" id="saveToQuizRag" checked>
-                                            <label class="form-check-label small fw-semibold" for="saveToQuizRag">
-                                                <i class="bi bi-journal-plus me-1 text-success"></i>Lưu vào đề thi này
-                                            </label>
-                                        </div>
                                         <div>
                                         <button class="btn btn-sm btn-outline-secondary me-2" onclick="selectAllDrafts('rag')">Chọn tất cả</button>
                                         <button class="btn btn-sm btn-success" id="btnSaveDraftsRag" onclick="saveSelectedDrafts('rag')" style="display:none">

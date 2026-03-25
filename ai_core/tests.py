@@ -66,8 +66,8 @@ class AICoreApiTests(APITestCase):
 		res = self.client.post('/api/ai/chat/', {'class_id': str(self.classroom.id), 'question': 'test'}, format='json')
 		self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
 
-	@patch('ai_core.views.api_key', None)
-	def test_rag_chat_returns_500_when_api_key_missing(self):
+	@patch('ai_core.views.ai_client.is_configured', return_value=False)
+	def test_rag_chat_returns_500_when_api_key_missing(self, _):
 		self._auth('student_ai', 'StudentPass123')
 		res = self.client.post(
 			'/api/ai/chat/',

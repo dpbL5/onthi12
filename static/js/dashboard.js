@@ -9,12 +9,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     async function initDashboard() {
         try {
-            const [meRes, statsRes] = await Promise.all([
-                fetch('/api/accounts/me/', { headers: authH() }),
-                fetch('/api/accounts/stats/', { headers: authH() })
-            ]);
-            if (!meRes.ok) throw new Error('Auth failed');
-            const user = await meRes.json();
+            const user = await window.getCurrentUser();
+            const statsRes = await fetch('/api/accounts/stats/', { headers: authH() });
+            
+            if (!user) throw new Error('Auth failed');
             const data = await statsRes.json();
             renderDashboard(user, data);
         } catch (e) {

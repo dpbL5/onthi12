@@ -40,9 +40,8 @@ function showTab(name) {
 
 // ── Init ─────────────────────────────────────────────────────
 async function init() {
-  const meRes = await fetch('/api/accounts/me/', {headers: ah()});
-  if (!meRes.ok) { window.location.href = '/login/'; return; }
-  const me = await meRes.json();
+  const me = await window.getCurrentUser();
+  if (!me) { window.location.href = '/login/'; return; }
   if (me.role?.name !== 'admin') {
     showGlobalAlert('Bạn không có quyền truy cập trang quản trị.', 'danger');
     setTimeout(() => window.location.href = '/dashboard/', 2000);

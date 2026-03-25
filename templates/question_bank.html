@@ -1,13 +1,13 @@
 {% extends 'base.html' %}
 {% load static %}
-{% block title %}Ngân hàng Câu hỏi – Nguyễn Văn Huyên Learning{% endblock %}
+{% block title %}Ngân hàng câu hỏi – Nguyễn Văn Huyên Learning{% endblock %}
 {% block content %}
 <div class="container py-4">
     <!-- Header -->
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
         <div>
             <h1 style="font-size:1.5rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.25rem;">
-                <i class="bi bi-bank2" style="color:var(--color-primary);margin-right:0.5rem;"></i>Ngân hàng Câu hỏi
+                <i class="bi bi-bank2" style="color:var(--color-primary);margin-right:0.5rem;"></i>Ngân hàng câu hỏi
             </h1>
             <p class="text-muted small mb-0">Quản lý, chỉnh sửa và tạo mới câu hỏi dùng chung cho các đề thi.</p>
         </div>
@@ -15,7 +15,7 @@
             <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#aiGeneratorModal">
                 <i class="bi bi-stars me-1"></i>Tạo bằng AI
             </button>
-            <button class="btn btn-primary" onclick="openCreateModal()">
+            <button class="btn btn-primary" onclick="openQuestionEditor()">
                 <i class="bi bi-plus-circle me-1"></i>Tạo câu hỏi thủ công
             </button>
         </div>
@@ -88,97 +88,7 @@
 
 </div>
 
-<!-- Modal Create/Edit Question -->
-<div class="modal fade" id="questionModal" tabindex="-1" data-bs-backdrop="static">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title" id="questionModalTitle">Tạo câu hỏi thủ công</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body bg-light">
-                <form id="questionForm">
-                    <input type="hidden" id="qId">
-                    
-                    <div class="row g-4">
-                        <div class="col-md-8">
-                            <div class="card border-0 shadow-sm h-100">
-                                <div class="card-body">
-                                    <div class="row mb-3">
-                                        <div class="col-md-4">
-                                            <label class="form-label fw-bold">Môn học <span class="text-danger">*</span></label>
-                                            <select id="qSubject" class="form-select form-select-sm" required></select>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <label class="form-label fw-bold">Độ khó</label>
-                                            <select id="qDiff" class="form-select form-select-sm">
-                                                <option value="easy">Nhận biết</option>
-                                                <option value="medium" selected>Thông hiểu</option>
-                                                <option value="hard">Vận dụng</option>
-                                            </select>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <label class="form-label fw-bold">Dạng câu hỏi</label>
-                                            <select id="qType" class="form-select form-select-sm" onchange="toggleOptionFields()">
-                                                <option value="multiple_choice">1 Lựa chọn đúng (A/B/C/D)</option>
-                                                <option value="true_false">Câu hỏi Đúng/Sai (A/B/C/D độc lập)</option>
-                                                <option value="short_answer">Trả lời ngắn (Điền từ)</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="mb-3">
-                                        <label class="form-label fw-bold">Nội dung câu hỏi</label>
-                                        <textarea id="qText" name="qText"></textarea>
-                                    </div>
-                                    <div class="mb-3" id="qContextWrapper" style="display: none;">
-                                        <label class="form-label fw-bold">Ngữ cảnh (dùng cho dạng Đúng/Sai)</label>
-                                        <textarea id="qContext" class="form-control" rows="3" placeholder="Nhập đoạn văn, ngữ cảnh chung cho 4 câu hỏi con..."></textarea>
-                                    </div>
-                                    <div class="px-3 py-2 bg-light border rounded mb-3">
-                                        <p class="small text-muted mb-1"><i class="bi bi-info-circle me-1"></i><strong>Mẹo soạn thảo:</strong> Bạn có thể dán mã Markdown ảnh từ Kho sang đây.</p>
-                                    </div>
-                                    
-                                    <label class="form-label fw-bold mt-3 mb-2"><i class="bi bi-check2-square me-2"></i>Các phương án / Đáp án</label>
-                                    <div id="optionsContainer" class="bg-light p-3 rounded border">
-                                        <!-- Dynamic Content Rendered by JS -->
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
 
-                        <div class="col-md-4">
-                            <div class="card border-0 shadow-sm mb-4">
-                                <div class="card-header bg-white fw-bold"><i class="bi bi-images me-2"></i>Kho ảnh đính kèm</div>
-                                <div class="card-body">
-                                    <p class="small text-muted mb-2">Tải ảnh lên và lấy Link để chèn vào Nội dung hoặc Phương án.</p>
-                                    <div class="mb-3">
-                                        <input type="file" id="qImageFile" class="form-control form-control-sm" accept="image/*">
-                                    </div>
-                                    <button class="btn btn-sm btn-primary w-100 mb-3" type="button" onclick="uploadQuestionImage()">
-                                        <i class="bi bi-cloud-upload me-1"></i>Tải ảnh lên Kho
-                                    </button>
-                                    
-                                    <!-- Hidden inputs for legacy API compatibility -->
-                                    <input type="hidden" id="qImageSourceType" value="user_upload">
-                                    <input type="hidden" id="qImagePlacementSelect" value="gallery">
-                                    <input type="hidden" id="qImageNote" value="">
-                                    
-                                    <div id="questionImageStatus" class="small mb-2"></div>
-                                    <div id="questionImageList" class="border rounded p-2" style="max-height: 380px; overflow-y: auto; background: #fafafa;"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
-                <button type="button" class="btn btn-primary" id="btnSaveQuestion" onclick="saveQuestion()">Lưu câu hỏi</button>
-            </div>
-        </div>
-    </div>
-</div>
 
 <!-- Modal Edit Options Quickly -->
 <div class="modal fade" id="quickReviewModal" tabindex="-1">
@@ -203,9 +113,7 @@
 {% endblock %}
 
 {% block scripts %}
-<!-- EasyMDE / SimpleMDE -->
-<link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">
-<script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
+<!-- EasyMDE script and css are handled in base.html now -->
 
 <script src="{% static 'js/question_bank.js' %}"></script>
 <style>

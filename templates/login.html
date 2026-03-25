@@ -1,6 +1,13 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block title %}Đăng nhập – Nguyễn Văn Huyên Learning{% endblock %}
+{% block head %}
+<script>
+    if (localStorage.getItem('access')) {
+        window.location.href = '/dashboard/';
+    }
+</script>
+{% endblock %}
 {% block content %}
 <div class="auth-wrapper">
     <!-- Left Branding Panel -->

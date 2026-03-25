@@ -34,6 +34,9 @@
                         <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createQuizModal">
                             <i class="bi bi-plus-circle me-1"></i> Tạo bài thi
                         </button>
+                        <button class="btn btn-outline-danger btn-sm ms-2" onclick="deleteClass(window.CLASS_ID, document.getElementById('classNameTitle').textContent)">
+                            <i class="bi bi-trash me-1"></i> Xoá lớp
+                        </button>
                     </div>
                     <div class="d-flex gap-3" style="font-size:0.8rem;color:var(--color-muted);">
                         <span><i class="bi bi-person-fill me-1"></i><strong id="teacherName"></strong></span>
@@ -171,7 +174,7 @@
                     <div class="mb-3"><label class="form-label fw-medium">Mô tả</label><textarea id="quizDesc" class="form-control" rows="2" placeholder="Nội dung, phạm vi..."></textarea></div>
                     <div class="row mb-2">
                         <div class="col-6"><label class="form-label fw-medium">Thời gian (phút)</label><input type="number" id="quizDuration" class="form-control" value="15" min="5"></div>
-                        <div class="col-6"><label class="form-label fw-medium">Hạn nộp</label><input type="date" id="quizDueDate" class="form-control"></div>
+                        <div class="col-6"><label class="form-label fw-medium">Hạn nộp</label><input type="datetime-local" id="quizDueDate" class="form-control"></div>
                     </div>
                     <div id="createQuizError" class="text-danger small mt-1"></div>
                 </form>
@@ -184,5 +187,8 @@
 <script>
     window.CLASS_ID = "{{ class_id }}";
 </script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://npmcdn.com/flatpickr/dist/l10n/vn.js"></script>
 <script src="{% static 'js/class_detail.js' %}"></script>
 {% endblock %}

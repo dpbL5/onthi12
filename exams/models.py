@@ -15,6 +15,7 @@ class ImageBank(models.Model):
     file_size = models.PositiveIntegerField(blank=True, null=True, help_text="Dung lượng ảnh theo bytes")
     width_pt = models.FloatField(null=True, blank=True, help_text="Độ rộng hiển thị (pt) trong docx gốc")
     height_pt = models.FloatField(null=True, blank=True, help_text="Độ cao hiển thị (pt) trong docx gốc")
+    image_url = models.URLField(max_length=1000, blank=True, null=True, help_text="Link ảnh trực tiếp (vd: Cloudinary)")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -64,7 +65,7 @@ class Question(models.Model):
         help_text="Lời giải thích chi tiết cho toàn bộ câu hỏi."
     )
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='questions')
-    difficulty = models.CharField(max_length=10, choices=DIFFICULTY_CHOICES, default='medium')
+    difficulty = models.CharField(max_length=10, choices=DIFFICULTY_CHOICES, default='easy')
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_questions')
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -85,7 +86,8 @@ class QuestionImage(models.Model):
     )
 
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='question_images')
-    image = models.ForeignKey(ImageBank, on_delete=models.CASCADE)
+    image = models.ForeignKey(ImageBank, on_delete=models.CASCADE, null=True, blank=True)
+    image_url = models.URLField(max_length=1000, blank=True, null=True, help_text="Link ảnh trực tiếp từ AI/Cloudinary")
     position = models.IntegerField(default=0, help_text="Thứ tự xuất hiện")
     placement = models.CharField(max_length=50, default='stem', help_text="Vị trí: stem, choice_A, sub_a...")
     source_type = models.CharField(max_length=20, choices=SOURCE_TYPE_CHOICES, default='user_upload')
@@ -95,7 +97,8 @@ class QuestionImage(models.Model):
 
     class Meta:
         ordering = ['position']
-        unique_together = ('question', 'image', 'placement', 'position')
+        # Remove unique_together as it might conflict with null image and we want flexibility
+        # unique_together = ('question', 'image', 'placement', 'position')
         
     def __str__(self):
         return f"Q{self.question.id} -> {self.image.sha256[:8]}"

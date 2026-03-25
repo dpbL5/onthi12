@@ -301,6 +301,7 @@ class DocxNativeParser:
                 secure_url = upload_to_cloudinary(img_bytes, file_name)
                 if secure_url:
                     img_bank.image_file.name = secure_url
+                    img_bank.image_url = secure_url
                     img_bank.save()
                 else:
                     print(f"  Cloudinary upload failed for {zip_path}")

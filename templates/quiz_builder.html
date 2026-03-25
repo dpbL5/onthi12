@@ -108,12 +108,12 @@
                 <div class="qb-sidebar-card sticky-top" style="top: 85px; z-index: 100;">
                     <div class="qb-sidebar-header">
                         <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h3 class="qb-sidebar-title"><i class="bi bi-bank2 me-2"></i>Ngân hàng</h3>
+                            <h3 class="qb-sidebar-title"><i class="bi bi-bank2 me-2"></i>Ngân hàng câu hỏi</h3>
                             <div class="d-flex gap-2">
                                 <button class="btn btn-icon-only bg-primary-light text-primary" data-bs-toggle="modal" data-bs-target="#aiGeneratorModal" title="Tạo bằng AI">
                                     <i class="bi bi-stars"></i>
                                 </button>
-                                <button class="btn btn-icon-only bg-success-light text-success" data-bs-toggle="modal" data-bs-target="#createQuestionModal" title="Tạo thủ công">
+                                <button class="btn btn-icon-only bg-success-light text-success" onclick="openQuestionEditor()" title="Tạo thủ công">
                                     <i class="bi bi-plus-lg"></i>
                                 </button>
                             </div>
@@ -134,109 +134,7 @@
 
     {% include 'components/ai_generator_modal.html' with show_save_to_quiz=True %}
 
-    <!-- Modal: Create/Edit Question (Replaced with Question Bank layout) -->
-    <div class="modal fade" id="createQuestionModal" tabindex="-1" data-bs-backdrop="static">
-        <div class="modal-dialog modal-xl modal-dialog-scrollable">
-            <div class="modal-content border-0 shadow">
-                <div class="modal-header bg-success text-white">
-                    <h5 class="modal-title" id="qbModalTitle">Tạo câu hỏi thủ công</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body bg-light">
-                    <form id="createQuestionForm">
-                        <div class="row g-4">
-                            <div class="col-md-8">
-                                <div class="card border-0 shadow-sm h-100">
-                                    <div class="card-body">
-                                        <div class="row mb-3">
-                                            <div class="col-md-4">
-                                                <label class="form-label fw-bold">Môn học</label>
-                                                <select id="qbSubject" class="form-select form-select-sm" disabled>
-                                                    <!-- Populated by JS -->
-                                                </select>
-                                            </div>
-                                            <div class="col-md-4">
-                                                <label class="form-label fw-bold">Độ khó</label>
-                                                <select id="qbDiff" class="form-select form-select-sm">
-                                                    <option value="easy">Nhận biết</option>
-                                                    <option value="medium" selected>Thông hiểu</option>
-                                                    <option value="hard">Vận dụng</option>
-                                                </select>
-                                            </div>
-                                            <div class="col-md-4">
-                                                <label class="form-label fw-bold">Dạng câu hỏi</label>
-                                                <select id="qbType" class="form-select form-select-sm"
-                                                    onchange="toggleQbOptions()">
-                                                    <option value="multiple_choice" selected>Trắc nghiệm (1 Lựa chọn)
-                                                    </option>
-                                                    <option value="true_false">Đúng / Sai (4 phát biểu)</option>
-                                                    <option value="short_answer">Trả lời ngắn (Điền từ)</option>
-                                                </select>
-                                            </div>
-                                        </div>
 
-                                        <div class="mb-3">
-                                            <label class="form-label fw-bold">Nội dung câu hỏi</label>
-                                            <textarea id="qbText" name="qbText"></textarea>
-                                        </div>
-                                        <div class="mb-3" id="qbContextWrapper" style="display: none;">
-                                            <label class="form-label fw-bold">Ngữ cảnh (dùng cho dạng Đúng/Sai)</label>
-                                            <textarea id="qbContext" class="form-control" rows="3"
-                                                placeholder="Nhập đoạn văn, ngữ cảnh chung cho 4 câu hỏi con..."></textarea>
-                                        </div>
-                                        <div class="px-3 py-2 bg-light border rounded mb-3">
-                                            <p class="small text-muted mb-1"><i
-                                                    class="bi bi-info-circle me-1"></i><strong>Mẹo soạn thảo:</strong>
-                                                Bạn có thể dán mã Markdown ảnh từ Kho sang đây.</p>
-                                        </div>
-
-                                        <label class="form-label fw-bold mt-3 mb-2"><i
-                                                class="bi bi-check2-square me-2"></i>Các phương án / Đáp án</label>
-                                        <div id="qbOptionsContainer" class="bg-light p-3 rounded border">
-                                            <!-- Dynamic Content -->
-                                        </div>
-                                        <div id="createQError" class="text-danger small mt-2"></div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="col-md-4">
-                                <div class="card border-0 shadow-sm mb-4">
-                                    <div class="card-header bg-white fw-bold"><i class="bi bi-images me-2"></i>Kho ảnh
-                                        đính kèm</div>
-                                    <div class="card-body">
-                                        <p class="small text-muted mb-2">Tải ảnh lên và lấy Link để chèn vào Nội dung
-                                            hoặc Phương án.</p>
-                                        <div class="mb-3">
-                                            <input type="file" id="qbImageFile" class="form-control form-control-sm"
-                                                accept="image/*">
-                                        </div>
-                                        <button class="btn btn-sm btn-primary w-100 mb-3" type="button"
-                                            onclick="uploadQuizBuilderImage()">
-                                            <i class="bi bi-cloud-upload me-1"></i>Tải ảnh lên Kho
-                                        </button>
-                                        <div id="qbImageStatus" class="small mb-2"></div>
-                                        <div id="qbImageList" class="border rounded p-2"
-                                            style="max-height: 380px; overflow-y: auto; background: #fafafa;"></div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <div class="form-check me-auto">
-                        <input class="form-check-input" type="checkbox" id="addManualToQuiz" checked>
-                        <label class="form-check-label small" for="addManualToQuiz">Thêm luôn vào đề thi hiện
-                            tại</label>
-                    </div>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
-                    <button type="button" class="btn btn-success px-4" onclick="submitCreateQuestion()"><i
-                            class="bi bi-check2-circle me-1"></i>Lưu câu hỏi</button>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <!-- Modal: Edit Quiz Settings -->
     <div class="modal fade" id="editQuizModal" tabindex="-1">
@@ -290,7 +188,7 @@
                     <i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 3rem;"></i>
                     <h5 class="mt-3 mb-3 fw-bold">Rút câu hỏi?</h5>
                     <p class="text-muted small">Hành động này sẽ rút câu hỏi khỏi đề thi hiện tại. Câu hỏi vẫn còn trong
-                        Ngân hàng.</p>
+                        Ngân hàng câu hỏi.</p>
                     <div class="d-flex justify-content-center gap-2 mt-4">
                         <button type="button" class="btn btn-light" data-bs-dismiss="modal">Hủy</button>
                         <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Đồng ý</button>
@@ -331,7 +229,7 @@
     <script>
         const quizId = "{{ quiz_id }}";
     </script>
-    <script src="{% static 'js/quiz_builder.js' %}?v=20260320-4"></script>
+    <script src="{% static 'js/quiz_builder.js' %}?v=20260324-2"></script>
 <style>
 /* Quiz Builder Premium Styles */
 .qb-header-card {

@@ -12,9 +12,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const pageTitle = document.getElementById('pageTitle');
         if (!pageTitle) return; // Not on classes page
 
-        const meRes = await fetch('/api/accounts/me/', {headers: authH()});
-        if (!meRes.ok) { window.location.href = '/login/'; return; }
-        const me = await meRes.json();
+        const me = await window.getCurrentUser();
+        if (!me) { window.location.href = '/login/'; return; }
         currentRole = me.role?.name;
     
         if (currentRole === 'teacher') {
@@ -72,7 +71,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="class-card-body">
                         <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
                             <h6 class="class-name mb-0">${cls.name}</h6>
-                            <span class="badge" style="background:var(--color-${color}-light,var(--color-primary-light));color:var(--color-${color},var(--color-primary));white-space:nowrap;">${cls.subject_name || 'Chưa có môn'}</span>
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="badge" style="background:var(--color-${color}-light,var(--color-primary-light));color:var(--color-${color},var(--color-primary));white-space:nowrap;">${cls.subject_name || 'Chưa có môn'}</span>
+                                ${(currentRole === 'teacher' || currentRole === 'admin') ? `
+                                <button class="btn btn-link text-danger p-0 border-0" onclick="event.stopPropagation(); deleteClass('${cls.id}', '${cls.name}')" title="Xoá lớp" style="box-shadow:none;">
+                                    <i class="bi bi-trash"></i>
+                                </button>` : ''}
+                            </div>
                         </div>
                         <div class="class-meta d-flex flex-column gap-1">
                             <span><i class="bi bi-person-fill me-1"></i>${teacherName}</span>
@@ -135,6 +140,23 @@ document.addEventListener('DOMContentLoaded', () => {
             await loadClasses();
         } else {
             errEl.textContent = data.detail || 'Tham gia lớp thất bại.';
+        }
+    }
+
+    window.deleteClass = async function(id, name) {
+        if (!confirm(`Bạn có chắc chắn muốn xoá lớp "${name}"? Thao tác này sẽ xoá toàn bộ bài thi, kết quả và tài liệu liên quan và không thể hoàn tác.`)) return;
+        
+        const res = await fetch(`/api/classes/${id}/`, {
+            method: 'DELETE',
+            headers: authH()
+        });
+        
+        if (res.ok) {
+            showGlobalAlert(`Đã xoá lớp <b>${name}</b> thành công.`, 'success');
+            await loadClasses();
+        } else {
+            const data = await res.json().catch(() => ({}));
+            alert(data.detail || 'Xoá lớp thất bại.');
         }
     }
 

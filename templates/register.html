@@ -1,6 +1,13 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block title %}Đăng ký – Nguyễn Văn Huyên Learning{% endblock %}
+{% block head %}
+<script>
+    if (localStorage.getItem('access')) {
+        window.location.href = '/dashboard/';
+    }
+</script>
+{% endblock %}
 {% block content %}
 <div class="auth-wrapper">
     <!-- Left Branding Panel -->
@@ -45,10 +52,12 @@
                     <div class="col-6">
                         <label style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem;display:block;">Họ</label>
                         <input type="text" class="form-control" id="last_name" placeholder="Nguyễn" autocomplete="family-name">
+                        <div id="err_last_name" class="text-danger" style="font-size: 0.75rem; margin-top: 2px;"></div>
                     </div>
                     <div class="col-6">
                         <label style="font-size:0.85rem;font-weight:600;margin-bottom:0.4rem;display:block;">Tên</label>
                         <input type="text" class="form-control" id="first_name" placeholder="Văn An" autocomplete="given-name">
+                        <div id="err_first_name" class="text-danger" style="font-size: 0.75rem; margin-top: 2px;"></div>
                     </div>
                 </div>
 
@@ -73,6 +82,7 @@
                         <input type="email" class="form-control" id="reg_email" required autocomplete="email"
                                placeholder="email@example.com" style="padding-left:2.5rem;">
                     </div>
+                    <div id="err_reg_email" class="text-danger" style="font-size: 0.75rem; margin-top: 2px;"></div>
                 </div>
 
                 <div class="auth-input-group">
@@ -82,6 +92,7 @@
                         <input type="text" class="form-control" id="reg_username" required autocomplete="username"
                                placeholder="username_cua_ban" style="padding-left:2.5rem;">
                     </div>
+                    <div id="err_reg_username" class="text-danger" style="font-size: 0.75rem; margin-top: 2px;"></div>
                 </div>
 
                 <div class="auth-input-group">
@@ -95,6 +106,7 @@
                             <i class="bi bi-eye" id="eyeReg"></i>
                         </button>
                     </div>
+                    <div id="err_reg_password" class="text-danger" style="font-size: 0.75rem; margin-top: 2px;"></div>
                     <!-- Password strength bar -->
                     <div id="strengthBar" style="height:4px;border-radius:4px;margin-top:0.4rem;background:var(--color-border);overflow:hidden;display:none;">
                         <div id="strengthFill" style="height:100%;border-radius:4px;transition:all 0.3s;width:0%;"></div>
