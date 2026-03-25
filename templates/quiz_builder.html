@@ -40,24 +40,27 @@
                                 </button>
                             </div>
                         </div>
-                        
+
                         <div class="qb-meta-container">
                             <div class="qb-meta-item">
-                                <div class="qb-meta-icon bg-warning-light text-warning"><i class="bi bi-clock-history"></i></div>
+                                <div class="qb-meta-icon bg-warning-light text-warning"><i
+                                        class="bi bi-clock-history"></i></div>
                                 <div class="qb-meta-text">
                                     <span class="label">Thời gian</span>
                                     <span class="value"><strong id="quizDuration"></strong> phút</span>
                                 </div>
                             </div>
                             <div class="qb-meta-item">
-                                <div class="qb-meta-icon bg-primary-light text-primary"><i class="bi bi-journal-text"></i></div>
+                                <div class="qb-meta-icon bg-primary-light text-primary"><i
+                                        class="bi bi-journal-text"></i></div>
                                 <div class="qb-meta-text">
                                     <span class="label">Số câu hỏi</span>
                                     <span class="value"><strong id="quizQuestionCount">0</strong> câu</span>
                                 </div>
                             </div>
                             <div class="qb-meta-item">
-                                <div class="qb-meta-icon bg-success-light text-success"><i class="bi bi-check-circle"></i></div>
+                                <div class="qb-meta-icon bg-success-light text-success"><i
+                                        class="bi bi-check-circle"></i></div>
                                 <div class="qb-meta-text">
                                     <span class="label">Trạng thái</span>
                                     <span id="quizStatus" class="badge">Nháp</span>
@@ -80,18 +83,20 @@
                                 <span id="totalPoints" class="value">0</span>
                             </div>
                             <div id="publishActions">
-                                <button id="publishBtn" class="btn btn-success btn-sm px-3" onclick="togglePublish()" style="display:none">
+                                <button id="publishBtn" class="btn btn-success btn-sm px-3" onclick="togglePublish()"
+                                    style="display:none">
                                     <i class="bi bi-send-fill me-1"></i>Công khai
                                 </button>
-                                <button id="unpublishBtn" class="btn btn-warning btn-sm px-3" onclick="togglePublish()" style="display:none">
+                                <button id="unpublishBtn" class="btn btn-warning btn-sm px-3" onclick="togglePublish()"
+                                    style="display:none">
                                     <i class="bi bi-eye-slash-fill me-1"></i>Ẩn bài
                                 </button>
                             </div>
                         </div>
                     </div>
-                    
+
                     <ul id="selectedQuestionsList" class="list-group list-group-flush"></ul>
-                    
+
                     <div id="noQuestionsMsg" class="empty-state py-5">
                         <div class="empty-icon"><i class="bi bi-clipboard-x text-muted opacity-50"></i></div>
                         <h4 class="empty-title mt-3">Đề thi đang trống</h4>
@@ -110,17 +115,58 @@
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <h3 class="qb-sidebar-title"><i class="bi bi-bank2 me-2"></i>Ngân hàng câu hỏi</h3>
                             <div class="d-flex gap-2">
-                                <button class="btn btn-icon-only bg-primary-light text-primary" data-bs-toggle="modal" data-bs-target="#aiGeneratorModal" title="Tạo bằng AI">
+                                <button class="btn btn-icon-only bg-primary-light text-primary" data-bs-toggle="modal"
+                                    data-bs-target="#aiGeneratorModal" title="Tạo bằng AI">
                                     <i class="bi bi-stars"></i>
                                 </button>
-                                <button class="btn btn-icon-only bg-success-light text-success" onclick="openQuestionEditor()" title="Tạo thủ công">
+                                <button class="btn btn-icon-only bg-success-light text-success"
+                                    onclick="openQuestionEditor()" title="Tạo thủ công">
                                     <i class="bi bi-plus-lg"></i>
                                 </button>
                             </div>
                         </div>
+                        <!-- <div class="mb-3">
+                            <select id="bankSubjectFilter" class="form-select form-select-sm" onchange="filterBank()">
+                                <option value="">Tất cả môn học</option>
+                            </select>
+                        </div> -->
+                        <div class="mb-3">
+                            <label class="form-label small fw-medium mb-1">Môn học</label>
+                            <select id="filterSubject" class="form-select form-select-sm" onchange="filterBank(true)">
+                                <option value="">Tất cả môn học</option>
+                            </select>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label small fw-medium mb-1">Độ khó</label>
+                                <select id="filterDiff" class="form-select form-select-sm" onchange="filterBank(true)">
+                                    <option value="">Tất cả</option>
+                                    <option value="easy">Nhận biết</option>
+                                    <option value="medium">Thông hiểu</option>
+                                    <option value="hard">Vận dụng</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-medium mb-1">Dạng</label>
+                                <select id="filterType" class="form-select form-select-sm" onchange="filterBank(true)">
+                                    <option value="">Tất cả</option>
+                                    <option value="multiple_choice">Chọn 1</option>
+                                    <option value="true_false">Đúng/Sai</option>
+                                    <option value="short_answer">Điền</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-medium mb-1">Trạng thái</label>
+                            <select id="filterStatus" class="form-select form-select-sm" onchange="filterBank(true)">
+                                <option value="">Tất cả</option>
+                                <option value="needs_review">Cần cập nhật đáp án</option>
+                            </select>
+                        </div>
                         <div class="qb-search-wrap">
                             <i class="bi bi-search qb-search-icon"></i>
-                            <input type="text" class="form-control qb-search-input" id="bankSearch" placeholder="Tìm kiếm câu hỏi..." oninput="filterBank()">
+                            <input type="text" class="form-control qb-search-input" id="bankSearch"
+                                placeholder="Tìm kiếm câu hỏi..." oninput="filterBank()">
                         </div>
                     </div>
                     <div class="qb-bank-list-wrap">
@@ -232,274 +278,335 @@
         const quizId = "{{ quiz_id }}";
     </script>
     <script src="{% static 'js/quiz_builder.js' %}?v=20260324-2"></script>
-<style>
-/* Quiz Builder Premium Styles */
-.qb-header-card {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    box-shadow: var(--shadow-sm);
-    position: relative;
-}
-.qb-header-top-accent {
-    height: 4px;
-    background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
-}
-.qb-title {
-    font-size: 1.5rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    margin-bottom: 0.35rem;
-    color: var(--color-text);
-}
-.qb-desc {
-    color: var(--color-muted);
-    font-size: 0.9rem;
-    margin: 0;
-}
-.qb-btn-outline-primary, .qb-btn-outline-danger {
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    border-radius: var(--radius-md);
-    transition: var(--transition);
-}
-.qb-btn-outline-primary {
-    color: var(--color-primary);
-    border: 1.5px solid var(--color-primary-light);
-    background: var(--color-primary-light);
-}
-.qb-btn-outline-primary:hover {
-    background: var(--color-primary);
-    color: #fff;
-    border-color: var(--color-primary);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
-}
-.qb-btn-outline-danger {
-    color: var(--color-danger);
-    border: 1.5px solid var(--color-danger-light);
-    background: var(--color-danger-light);
-}
-.qb-btn-outline-danger:hover {
-    background: var(--color-danger);
-    color: #fff;
-    border-color: var(--color-danger);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
-}
+    <style>
+        /* Quiz Builder Premium Styles */
+        .qb-header-card {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
+            position: relative;
+        }
 
-.qb-meta-container {
-    display: flex;
-    gap: 2rem;
-    flex-wrap: wrap;
-    align-items: center;
-    padding-top: 1.25rem;
-    border-top: 1px solid var(--color-border);
-}
-.qb-meta-item {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
-.qb-meta-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.1rem;
-}
-.qb-meta-text {
-    display: flex;
-    flex-direction: column;
-}
-.qb-meta-text .label {
-    font-size: 0.7rem;
-    color: var(--color-muted);
-    text-transform: uppercase;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    line-height: 1;
-    margin-bottom: 0.25rem;
-}
-.qb-meta-text .value {
-    font-size: 0.9rem;
-    color: var(--color-text);
-    line-height: 1;
-}
+        .qb-header-top-accent {
+            height: 4px;
+            background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+        }
 
-.qb-section-card {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    box-shadow: var(--shadow-sm);
-}
-.qb-section-header {
-    padding: 1.25rem 1.5rem;
-    background: #fff;
-    border-bottom: 1px solid var(--color-border);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 1rem;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-}
-.qb-section-title {
-    font-size: 1rem;
-    font-weight: 700;
-    margin: 0;
-    color: var(--color-text);
-}
-.qb-points-badge {
-    background: var(--color-primary-light);
-    color: var(--color-primary);
-    border-radius: var(--radius-pill);
-    padding: 0.4rem 1rem;
-    font-size: 0.85rem;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-.qb-points-badge .label { opacity: 0.8; font-weight: 600; }
+        .qb-title {
+            font-size: 1.5rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.35rem;
+            color: var(--color-text);
+        }
 
-/* Question Items */
-.qb-question-item {
-    padding: 1.5rem;
-    border-bottom: 1px solid var(--color-border);
-    transition: var(--transition);
-    position: relative;
-    background: #fff;
-}
-.qb-question-item:hover {
-    background: var(--color-bg);
-}
-.qb-question-item:last-child {
-    border-bottom: none;
-}
-.qb-q-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
-}
-.qb-q-number {
-    font-size: 0.75rem;
-    font-weight: 800;
-    text-transform: uppercase;
-    color: var(--color-primary);
-    background: var(--color-primary-light);
-    padding: 0.25rem 0.75rem;
-    border-radius: var(--radius-pill);
-}
+        .qb-desc {
+            color: var(--color-muted);
+            font-size: 0.9rem;
+            margin: 0;
+        }
 
-/* Sidebar Styles */
-.qb-sidebar-card {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    box-shadow: var(--shadow-sm);
-}
-.qb-sidebar-header {
-    padding: 1.25rem;
-    border-bottom: 1px solid var(--color-border);
-    background: #fff;
-}
-.qb-sidebar-title {
-    font-size: 0.95rem;
-    font-weight: 700;
-    margin: 0;
-}
-.qb-search-wrap {
-    position: relative;
-}
-.qb-search-icon {
-    position: absolute;
-    left: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--color-muted);
-    font-size: 0.9rem;
-}
-.qb-search-input {
-    padding-left: 2.5rem;
-    background: var(--color-bg);
-    border-color: transparent;
-    font-size: 0.875rem;
-    height: 42px;
-}
-.qb-search-input:focus {
-    background: #fff;
-    border-color: var(--color-primary);
-}
-.qb-bank-list-wrap {
-    max-height: calc(100vh - 250px);
-    overflow-y: auto;
-}
-.qb-bank-item {
-    padding: 1rem 1.25rem;
-    border-bottom: 1px solid var(--color-border);
-    transition: var(--transition);
-    cursor: default;
-}
-.qb-bank-item:hover {
-    background: var(--color-bg);
-}
-.qb-bank-item:last-child {
-    border-bottom: none;
-}
-.qb-bank-q-text {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--color-text);
-    margin-bottom: 0.5rem;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
+        .qb-btn-outline-primary,
+        .qb-btn-outline-danger {
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            border-radius: var(--radius-md);
+            transition: var(--transition);
+        }
 
-.btn-icon-only {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    transition: var(--transition);
-    border: none;
-}
-.btn-icon-only:hover {
-    transform: translateY(-2px);
-    filter: brightness(0.95);
-}
+        .qb-btn-outline-primary {
+            color: var(--color-primary);
+            border: 1.5px solid var(--color-primary-light);
+            background: var(--color-primary-light);
+        }
 
-/* Animations */
-.animate-in {
-    animation: fadeInUp 0.5s ease backwards;
-}
-.animate-in-delay-1 { animation-delay: 0.1s; }
-.animate-in-delay-2 { animation-delay: 0.2s; }
+        .qb-btn-outline-primary:hover {
+            background: var(--color-primary);
+            color: #fff;
+            border-color: var(--color-primary);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
+        }
 
-@keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(15px); }
-    to { opacity: 1; transform: translateY(0); }
-}
+        .qb-btn-outline-danger {
+            color: var(--color-danger);
+            border: 1.5px solid var(--color-danger-light);
+            background: var(--color-danger-light);
+        }
 
-.text-truncate-2 { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .qb-btn-outline-danger:hover {
+            background: var(--color-danger);
+            color: #fff;
+            border-color: var(--color-danger);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+        }
 
-.ai-draft-board { min-height: 400px; max-height: 500px; overflow-y: auto; background-color: #f8f9fa; }
-</style>
+        .qb-meta-container {
+            display: flex;
+            gap: 2rem;
+            flex-wrap: wrap;
+            align-items: center;
+            padding-top: 1.25rem;
+            border-top: 1px solid var(--color-border);
+        }
+
+        .qb-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .qb-meta-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+        }
+
+        .qb-meta-text {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .qb-meta-text .label {
+            font-size: 0.7rem;
+            color: var(--color-muted);
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            line-height: 1;
+            margin-bottom: 0.25rem;
+        }
+
+        .qb-meta-text .value {
+            font-size: 0.9rem;
+            color: var(--color-text);
+            line-height: 1;
+        }
+
+        .qb-section-card {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .qb-section-header {
+            padding: 1.25rem 1.5rem;
+            background: #fff;
+            border-bottom: 1px solid var(--color-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .qb-section-title {
+            font-size: 1rem;
+            font-weight: 700;
+            margin: 0;
+            color: var(--color-text);
+        }
+
+        .qb-points-badge {
+            background: var(--color-primary-light);
+            color: var(--color-primary);
+            border-radius: var(--radius-pill);
+            padding: 0.4rem 1rem;
+            font-size: 0.85rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .qb-points-badge .label {
+            opacity: 0.8;
+            font-weight: 600;
+        }
+
+        /* Question Items */
+        .qb-question-item {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--color-border);
+            transition: var(--transition);
+            position: relative;
+            background: #fff;
+        }
+
+        .qb-question-item:hover {
+            background: var(--color-bg);
+        }
+
+        .qb-question-item:last-child {
+            border-bottom: none;
+        }
+
+        .qb-q-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .qb-q-number {
+            font-size: 0.75rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            color: var(--color-primary);
+            background: var(--color-primary-light);
+            padding: 0.25rem 0.75rem;
+            border-radius: var(--radius-pill);
+        }
+
+        /* Sidebar Styles */
+        .qb-sidebar-card {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .qb-sidebar-header {
+            padding: 1.25rem;
+            border-bottom: 1px solid var(--color-border);
+            background: #fff;
+        }
+
+        .qb-sidebar-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .qb-search-wrap {
+            position: relative;
+        }
+
+        .qb-search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--color-muted);
+            font-size: 0.9rem;
+        }
+
+        .qb-search-input {
+            padding-left: 2.5rem;
+            background: var(--color-bg);
+            border-color: transparent;
+            font-size: 0.875rem;
+            height: 42px;
+        }
+
+        .qb-search-input:focus {
+            background: #fff;
+            border-color: var(--color-primary);
+        }
+
+        .qb-bank-list-wrap {
+            max-height: calc(100vh - 250px);
+            overflow-y: auto;
+        }
+
+        .qb-bank-item {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--color-border);
+            transition: var(--transition);
+            cursor: default;
+        }
+
+        .qb-bank-item:hover {
+            background: var(--color-bg);
+        }
+
+        .qb-bank-item:last-child {
+            border-bottom: none;
+        }
+
+        .qb-bank-q-text {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--color-text);
+            margin-bottom: 0.5rem;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .btn-icon-only {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            transition: var(--transition);
+            border: none;
+        }
+
+        .btn-icon-only:hover {
+            transform: translateY(-2px);
+            filter: brightness(0.95);
+        }
+
+        /* Animations */
+        .animate-in {
+            animation: fadeInUp 0.5s ease backwards;
+        }
+
+        .animate-in-delay-1 {
+            animation-delay: 0.1s;
+        }
+
+        .animate-in-delay-2 {
+            animation-delay: 0.2s;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(15px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .text-truncate-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .ai-draft-board {
+            min-height: 400px;
+            max-height: 500px;
+            overflow-y: auto;
+            background-color: #f8f9fa;
+        }
+    </style>
     {% endblock %}

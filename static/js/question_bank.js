@@ -104,8 +104,9 @@ async function loadQuestions(page = 1) {
         const diff = document.getElementById('filterDiff').value;
         const type = document.getElementById('filterType').value;
         const search = document.getElementById('filterSearch').value;
+        const status = document.getElementById('filterStatus') ? document.getElementById('filterStatus').value : '';
         
-        let url = `/api/exams/questions/?page=${page}&subject=${sub}&difficulty=${diff}&question_type=${type}&search=${encodeURIComponent(search)}`;
+        let url = `/api/exams/questions/?page=${page}&subject=${sub}&difficulty=${diff}&question_type=${type}&search=${encodeURIComponent(search)}&status=${status}`;
         
         const res = await fetch(url, { headers: authHeaders() });
         const data = await res.json();
@@ -135,52 +136,77 @@ async function loadQuestions(page = 1) {
 
 function renderPagination(data) {
     const container = document.getElementById('paginationContainer');
-    if (!container || !data.count || !data.results) return;
+    if (!container || !data.count) {
+        if (container) container.innerHTML = '';
+        return;
+    }
 
-    const totalPages = Math.ceil(data.count / 20); // matching backend page_size
-    if (totalPages <= 1) return;
+    const pageSize = 20; // DRF backend default
+    const totalPages = Math.ceil(data.count / pageSize);
+    if (totalPages <= 1) {
+        container.innerHTML = '';
+        return;
+    }
 
     let html = `
-        <nav aria-label="Page navigation">
+        <nav aria-label="Page navigation" class="mt-4">
             <ul class="pagination justify-content-center">
                 <li class="page-item ${!data.previous ? 'disabled' : ''}">
-                    <a class="page-link" href="#" onclick="loadQuestions(${currentPage - 1}); return false;" aria-label="Previous">
-                        <span aria-hidden="true">&laquo; Trang trước</span>
+                    <a class="page-link shadow-sm border-0" href="#" onclick="loadQuestions(${currentPage - 1}); return false;" aria-label="Previous">
+                        <i class="bi bi-chevron-left"></i>
                     </a>
                 </li>
     `;
 
-    // Show a few pages around current page
-    let startPage = Math.max(1, currentPage - 2);
-    let endPage = Math.min(totalPages, currentPage + 2);
+    // Advanced pagination algorithm (ellipsis)
+    const delta = 2; // Pages to show around current
+    const left = currentPage - delta;
+    const right = currentPage + delta + 1;
+    const range = [];
+    const rangeWithDots = [];
+    let l;
 
-    if (startPage > 1) {
-        html += `<li class="page-item"><a class="page-link" href="#" onclick="loadQuestions(1); return false;">1</a></li>`;
-        if (startPage > 2) html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+    for (let i = 1; i <= totalPages; i++) {
+        if (i === 1 || i === totalPages || (i >= left && i < right)) {
+            range.push(i);
+        }
     }
 
-    for (let i = startPage; i <= endPage; i++) {
-        html += `
-            <li class="page-item ${i === currentPage ? 'active' : ''}">
-                <a class="page-link" href="#" onclick="loadQuestions(${i}); return false;">${i}</a>
-            </li>
-        `;
+    for (const i of range) {
+        if (l) {
+            if (i - l === 2) {
+                rangeWithDots.push(l + 1);
+            } else if (i - l !== 1) {
+                rangeWithDots.push('...');
+            }
+        }
+        rangeWithDots.push(i);
+        l = i;
     }
 
-    if (endPage < totalPages) {
-        if (endPage < totalPages - 1) html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
-        html += `<li class="page-item"><a class="page-link" href="#" onclick="loadQuestions(${totalPages}); return false;">${totalPages}</a></li>`;
-    }
+    rangeWithDots.forEach(i => {
+        if (i === '...') {
+            html += `<li class="page-item disabled"><span class="page-link bg-transparent border-0">...</span></li>`;
+        } else {
+            html += `
+                <li class="page-item ${i === currentPage ? 'active' : ''}">
+                    <a class="page-link shadow-sm border-0 mx-1 rounded" href="#" onclick="loadQuestions(${i}); return false;">${i}</a>
+                </li>
+            `;
+        }
+    });
 
     html += `
                 <li class="page-item ${!data.next ? 'disabled' : ''}">
-                    <a class="page-link" href="#" onclick="loadQuestions(${currentPage + 1}); return false;" aria-label="Next">
-                        <span aria-hidden="true">Trang sau &raquo;</span>
+                    <a class="page-link shadow-sm border-0" href="#" onclick="loadQuestions(${currentPage + 1}); return false;" aria-label="Next">
+                        <i class="bi bi-chevron-right"></i>
                     </a>
                 </li>
             </ul>
         </nav>
-        <div class="text-center text-muted small mt-2">Đang hiển thị trang ${currentPage} / ${totalPages} (Tổng cộng ${data.count} câu hỏi)</div>
+        <div class="text-center text-muted small mt-2">
+            Hiển thị ${Math.min(data.count, (currentPage - 1) * pageSize + 1)} - ${Math.min(data.count, currentPage * pageSize)} trên tổng số ${data.count} câu hỏi
+        </div>
     `;
 
     container.innerHTML = html;

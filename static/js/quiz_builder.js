@@ -163,14 +163,54 @@ async function init() {
 
         await loadQuizData();
         await loadSelectedQuestions();
+
+        // ─── Initialize Shared Logic & Filters ───
+        const subjectsRes = await fetch('/api/classes/subjects/', { headers: authHeaders() });
+        const subjectsData = await subjectsRes.json();
+        
+        // Populate Sidebar Subject Filter (using user's new ID 'filterSubject')
+        const subFilter = document.getElementById('filterSubject');
+        if (subFilter && Array.isArray(subjectsData)) {
+            subFilter.innerHTML = '<option value="">Tất cả môn học</option>';
+            subjectsData.forEach(s => {
+                const opt = new Option(s.name, s.id);
+                if (s.id == quizData?.subject_id) opt.selected = true;
+                subFilter.add(opt);
+            });
+        }
+
+        // Initialize AI Generator shared logic
+        AIGenerator.init({
+            context: 'quiz',
+            quizId: quizId,
+            subjectId: quizData?.subject_id,
+            onSaveSuccess: async () => {
+                await loadQuizData();
+                await loadSelectedQuestions();
+                await loadQuestionBank();
+            }
+        });
+
+        QuestionEditor.init({
+            context: 'quiz',
+            subjects: subjectsData,
+            subjectId: quizData?.subject_id,
+            currentQuizId: quizId,
+            onSave: async () => {
+                await loadQuizData();
+                await loadSelectedQuestions();
+                await loadQuestionBank();
+            }
+        });
+
+        // Now load the bank (it will use the correct filter value)
         await loadQuestionBank();
 
         // Hide subject selection in AI Modal for Quiz Builder
         const aiExtractSubWrap = document.getElementById('aiExtractSubjectWrap');
         if (aiExtractSubWrap) aiExtractSubWrap.style.display = 'none';
 
-        // FIX Bug 1: Remove 'required' from hidden select and populate with quizData.subject_id
-        // Nếu không làm điều này, HTML5 validation sẽ block form submit vì select required đang trống
+        // FIX Bug: Remove 'required' from hidden select and populate with quizData.subject_id
         const aiExtractSub = document.getElementById('aiExtractSubject');
         if (aiExtractSub) {
             aiExtractSub.removeAttribute('required');
@@ -190,40 +230,8 @@ async function init() {
             }
         }
 
-        // FIX Bug 2: bindAiGeneratorEvents() is called via DOMContentLoaded (see bottom of file)
-        // to ensure events are always bound regardless of init() success/failure.
-        // The aiExtractSubject fix below is done here (after quizData loads) to populate subject correctly.
-
         document.getElementById('loadingQuiz').style.display = 'none';
         document.getElementById('quizContent').style.display = 'block';
-
-        // Initialize AI Generator shared logic
-        AIGenerator.init({
-            context: 'quiz',
-            quizId: quizId,
-            subjectId: quizData?.subject_id,
-            onSaveSuccess: async () => {
-                await loadQuizData();
-                await loadSelectedQuestions();
-                await loadQuestionBank();
-            }
-        });
-
-        // Initialize Shared Question Editor
-        const subjectsRes = await fetch('/api/classes/subjects/', { headers: authHeaders() });
-        const subjectsData = await subjectsRes.json();
-        
-        QuestionEditor.init({
-            context: 'quiz',
-            subjects: subjectsData,
-            subjectId: quizData?.subject_id,
-            currentQuizId: quizId,
-            onSave: async () => {
-                await loadQuizData();
-                await loadSelectedQuestions();
-                await loadQuestionBank();
-            }
-        });
     } catch (e) {
         console.error(e);
         showInitError(e?.message || 'Lỗi khởi tạo màn hình. Vui lòng đăng nhập lại.');
@@ -400,59 +408,90 @@ async function loadQuestionBank(page = 1) {
     // We'll use the same API with page param
     let url = `/api/exams/questions/?page=${page}`;
     if (term) url += `&search=${encodeURIComponent(term)}`;
-    if (quizData && quizData.subject_id) {
+    
+    // Subject filter from sidebar or default to quiz subject
+    const sub = document.getElementById('filterSubject')?.value;
+    const diff = document.getElementById('filterDiff')?.value;
+    const type = document.getElementById('filterType')?.value;
+    const status = document.getElementById('filterStatus')?.value;
+
+    if (sub) {
+        url += `&subject=${sub}`;
+    } else if (sub === undefined && quizData && quizData.subject_id) {
+        // Only fallback if element doesn't exist yet
         url += `&subject=${quizData.subject_id}`;
     }
 
-    const res = await fetch(url, { headers: authHeaders() });
-    if (res.status === 401) {
-        window.location.href = '/login/';
-        return;
+    if (diff) url += `&difficulty=${diff}`;
+    if (type) url += `&question_type=${type}`;
+    if (status) url += `&status=${status}`;
+
+    try {
+        const res = await fetch(url, { headers: authHeaders() });
+        if (res.status === 401) {
+            window.location.href = '/login/';
+            return;
+        }
+        if (!res.ok) {
+            throw new Error('Không tải được ngân hàng câu hỏi.');
+        }
+        const data = await res.json();
+        questionBank = normalizeListResponse(data);
+        renderQuestionBank(questionBank);
+        renderQbPagination(data);
+    } catch (err) {
+        console.error('Lỗi loadQuestionBank:', err);
+        const list = document.getElementById('questionBankList');
+        if (list) list.innerHTML = `<div class="p-4 text-center text-danger small">Lỗi: ${err.message}</div>`;
     }
-    if (!res.ok) {
-        throw new Error('Không tải được ngân hàng câu hỏi.');
-    }
-    const data = await res.json();
-    questionBank = normalizeListResponse(data);
-    renderQuestionBank(questionBank);
-    renderQbPagination(data);
 }
 
 function renderQbPagination(data) {
     const container = document.getElementById('qbPaginationContainer');
     if (!container) return;
     
-    if (!data.count || !data.results || Math.ceil(data.count / 20) <= 1) {
+    const pageSize = 20;
+    const totalPages = Math.ceil(data.count / pageSize);
+
+    if (!data.count || totalPages <= 1) {
         container.innerHTML = '';
         container.style.display = 'none';
         return;
     }
     
     container.style.display = 'block';
-    const totalPages = Math.ceil(data.count / 20);
     
     let html = `
-        <div class="d-flex justify-content-between align-items-center">
-            <button class="btn btn-sm btn-outline-secondary ${!data.previous ? 'disabled' : ''}" 
-                    onclick="loadQuestionBank(${qbCurrentPage - 1})">
+        <div class="d-flex justify-content-between align-items-center py-2 px-3 bg-light border-top">
+            <button class="btn btn-xs btn-outline-primary ${!data.previous ? 'disabled' : ''}" 
+                    onclick="loadQuestionBank(${qbCurrentPage - 1})" style="padding: 2px 6px;">
                 <i class="bi bi-chevron-left"></i>
             </button>
-            <span class="small text-muted">Trang ${qbCurrentPage}/${totalPages}</span>
-            <button class="btn btn-sm btn-outline-secondary ${!data.next ? 'disabled' : ''}" 
-                    onclick="loadQuestionBank(${qbCurrentPage + 1})">
+            <div class="small fw-bold text-primary">
+                Trang ${qbCurrentPage} / ${totalPages}
+            </div>
+            <button class="btn btn-xs btn-outline-primary ${!data.next ? 'disabled' : ''}" 
+                    onclick="loadQuestionBank(${qbCurrentPage + 1})" style="padding: 2px 6px;">
                 <i class="bi bi-chevron-right"></i>
             </button>
+        </div>
+        <div class="text-center pb-2 bg-light">
+            <span class="text-muted" style="font-size: 0.65rem;">Tổng ${data.count} câu hỏi</span>
         </div>
     `;
     container.innerHTML = html;
 }
 
 let bankSearchTimer;
-function filterBank() {
+function filterBank(immediate = false) {
     clearTimeout(bankSearchTimer);
-    bankSearchTimer = setTimeout(() => {
+    if (immediate) {
         loadQuestionBank(1);
-    }, 500);
+    } else {
+        bankSearchTimer = setTimeout(() => {
+            loadQuestionBank(1);
+        }, 500);
+    }
 }
 
 function renderQuestionBank(questions) {
