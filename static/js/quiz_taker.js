@@ -9,16 +9,31 @@ function escapeHtml(s) { return (s||'').toString().replace(/&/g,"&amp;").replace
 
 async function init() {
     try {
-        const res = await fetch(`/api/exams/${quizId}/`, {headers: authHeaders()});
+        // 1. Fetch quiz info
+        const res = await fetch('/api/exams/' + quizId + '/', {headers: authHeaders()});
         if (!res.ok) throw new Error();
         const quizInfo = await res.json();
         
-        if (!quizInfo) { showGlobalAlert('Bạn không có quyền hoặc đề thi chưa mở.', 'danger'); setTimeout(() => window.location.href='/dashboard/', 2000); return; }
+        if (!quizInfo) { showGlobalAlert('Bạn không có quyền hoặc đề thi chưa mở.', 'danger'); setTimeout(function() { window.location.href='/dashboard/'; }, 2000); return; }
         document.getElementById('introTitle').textContent = quizInfo.title;
         document.getElementById('activeQuizTitle').textContent = quizInfo.title;
         document.getElementById('introDesc').textContent = quizInfo.description || 'Không có mô tả.';
         document.getElementById('introDuration').textContent = quizInfo.duration_minutes;
         document.getElementById('introCount').textContent = quizInfo.question_count;
+
+        // 2. Check if already completed by calling start endpoint
+        try {
+            var startRes = await fetch('/api/exams/' + quizId + '/start/', {method:'POST', headers:authHeaders()});
+            var startData = await startRes.json();
+            if (startData.is_completed) {
+                // Already completed — go directly to results
+                document.getElementById('loadingState').style.display = 'none';
+                document.getElementById('resultTitle').textContent = quizInfo.title;
+                showResult(startData);
+                return;
+            }
+        } catch(e) { /* ignore check error, show intro normally */ }
+
         document.getElementById('loadingState').style.display = 'none';
         document.getElementById('introState').style.display = 'flex';
     } catch(e) { alert('Lỗi khởi tạo bài thi.'); window.location.href = '/dashboard/'; }
@@ -30,7 +45,7 @@ async function startQuiz() {
     try {
         const res = await fetch(`/api/exams/${quizId}/start/`, {method:'POST',headers:authHeaders()});
         const data = await res.json();
-        if (res.status === 400 && data.detail === "Bạn đã thi bài này rồi.") { document.getElementById('loadingState').style.display = 'none'; showResult(data.score); return; }
+        if (data.is_completed) { document.getElementById('loadingState').style.display = 'none'; showResult(data); return; }
         if (!res.ok) { alert(data.detail || 'Không thể bắt đầu làm bài.'); window.location.href = '/dashboard/'; return; }
         attemptId = data.attempt_id;
         quizQuestions = data.questions;
@@ -183,15 +198,146 @@ async function submitExam(isAuto=false) {
     try {
         const res = await fetch(`/api/exams/attempt/${attemptId}/submit/`, {method:'POST',headers:authHeaders(),body:JSON.stringify({answers:answersArr})});
         const data = await res.json();
-        if (res.ok) showResult(data.score);
+        if (res.ok) showResult(data);
         else { alert(data.detail||'Lỗi nộp bài.'); if(sBtn){sBtn.disabled=false;sBtn.innerHTML='<i class="bi bi-send-check me-1"></i>Nộp bài';} }
     } catch(e) { alert('Lỗi mạng.'); if(sBtn){sBtn.disabled=false;sBtn.innerHTML='<i class="bi bi-send-check me-1"></i>Nộp bài';} }
 }
 
-function showResult(score) {
-    ['introState','quizState','loadingState'].forEach(id => document.getElementById(id).style.display='none');
-    document.getElementById('resultState').style.display = 'flex';
-    document.getElementById('finalScore').textContent = parseFloat(score).toFixed(1);
+function showResult(data) {
+    ['introState','quizState','loadingState'].forEach(function(id) { document.getElementById(id).style.display='none'; });
+    document.getElementById('resultState').style.display = 'block';
+    document.getElementById('finalScore').textContent = parseFloat(data.score).toFixed(1);
+
+    // Compute stats
+    if (data.questions && data.answers) {
+        var totalQ = data.questions.length;
+        var correctCount = 0;
+        var incorrectCount = 0;
+        var unansweredCount = 0;
+
+        data.questions.forEach(function(qq) {
+            var studentAns = data.answers.filter(function(a) { return a.quiz_question === qq.id; });
+            if (studentAns.length === 0) {
+                unansweredCount++;
+            } else {
+                var qType = qq.question ? qq.question.question_type : '';
+                if (qType === 'true_false') {
+                    var allCorrect = studentAns.every(function(a) { return a.is_correct; });
+                    if (allCorrect) correctCount++;
+                    else incorrectCount++;
+                } else {
+                    var ans = studentAns[0];
+                    if (ans && ans.is_correct) correctCount++;
+                    else incorrectCount++;
+                }
+            }
+        });
+
+        var statCorrectEl = document.getElementById('statCorrect');
+        var statIncorrectEl = document.getElementById('statIncorrect');
+        var statUnansweredEl = document.getElementById('statUnanswered');
+        if (statCorrectEl) statCorrectEl.textContent = correctCount;
+        if (statIncorrectEl) statIncorrectEl.textContent = incorrectCount;
+        if (statUnansweredEl) statUnansweredEl.textContent = unansweredCount;
+
+        renderReview(data.questions, data.answers);
+        document.getElementById('reviewWrapper').style.display = 'block';
+    }
+}
+
+function renderReview(questions, answers) {
+    var container = document.getElementById('reviewContainer');
+    questions.sort(function(a,b) { return a.order - b.order; });
+    
+    container.innerHTML = questions.map(function(qq, idx) {
+        var q = qq.question;
+        var qType = q.question_type;
+        var studentAns = answers.filter(function(a) { return a.quiz_question === qq.id; });
+        
+        var reviewHtml = '';
+        if (qType === 'multiple_choice') {
+            var keys = ['A','B','C','D'];
+            var selectedOptId = studentAns[0] ? studentAns[0].selected_option : null;
+            var isSkipped = !selectedOptId;
+
+            reviewHtml = q.options.map(function(opt, oi) {
+                var isStudent = opt.id === selectedOptId;
+                var isCorrect = opt.is_correct;
+                var statusClass = '';
+                var badge = '';
+                if (isCorrect) {
+                    statusClass = 'correct';
+                    badge = '<span class="review-badge correct">Đáp án đúng</span>';
+                } else if (isStudent && !isCorrect) {
+                    statusClass = 'incorrect';
+                    badge = '<span class="review-badge incorrect">Bạn chọn sai</span>';
+                }
+                var selClass = isStudent ? 'student-selected' : '';
+                var optContent = QuestionRenderer.renderOption(opt, q.question_images);
+                return '<div class="review-opt ' + statusClass + ' ' + selClass + '">'
+                    + '<div class="quiz-option-key" style="width:24px;height:24px;font-size:0.75rem;">' + (keys[oi] || oi+1) + '</div>'
+                    + '<div style="flex:1;">' + optContent + '</div>'
+                    + badge
+                    + '</div>';
+            }).join('');
+            
+            if (isSkipped) {
+                reviewHtml = '<div class="mb-2"><span class="text-muted small">(Bỏ trống)</span></div>' + reviewHtml;
+            }
+
+        } else if (qType === 'true_false') {
+            var ctxHtml = q.context ? '<div class="small text-muted mb-2 fst-italic">Ngữ cảnh: ' + escapeHtml(q.context) + '</div>' : '';
+            reviewHtml = ctxHtml + q.options.map(function(opt, i) {
+                var ans = studentAns.find(function(a) { return a.selected_option === opt.id; });
+                var isCorrect = ans ? ans.is_correct : false;
+                var statusClass = ans ? (isCorrect ? 'correct' : 'incorrect') : '';
+                var badge = '';
+                if (ans) {
+                    badge = isCorrect
+                        ? '<i class="bi bi-check-circle-fill text-success"></i>'
+                        : '<i class="bi bi-x-circle-fill text-danger"></i>';
+                } else {
+                    badge = '<span class="text-muted small">(Bỏ trống)</span>';
+                }
+                var correctLabel = opt.is_correct ? 'Đúng' : 'Sai';
+                var optContent = QuestionRenderer.renderOption(opt, q.question_images);
+                return '<div class="review-opt ' + statusClass + '" style="justify-content:space-between;">'
+                    + '<div style="flex:1;">' + String.fromCharCode(97+i) + ') ' + optContent + '</div>'
+                    + '<div class="d-flex align-items-center gap-2">'
+                    + '<span class="small fw-bold">' + correctLabel + '</span>'
+                    + badge
+                    + '</div></div>';
+            }).join('');
+
+        } else if (qType === 'short_answer') {
+            var ans = studentAns[0];
+            var isCorrect = ans ? ans.is_correct : false;
+            var bgClass = isCorrect ? 'bg-success-light text-success' : 'bg-danger-light text-danger';
+            var ansText = ans ? escapeHtml(ans.answer_text) : '<span class="text-muted small">(Bỏ trống)</span>';
+            var icon = isCorrect ? '<i class="bi bi-check-circle-fill"></i>' : '<i class="bi bi-x-circle-fill"></i>';
+            var correctAns = escapeHtml(q.correct_answer_text || '');
+            reviewHtml = '<div class="p-2 rounded ' + bgClass + '" style="border:1px solid;font-size:0.875rem;">'
+                + '<div><strong>Bạn trả lời:</strong> ' + ansText + ' ' + icon + '</div>'
+                + '<div class="mt-1"><strong>Đáp án đúng:</strong> ' + correctAns + '</div>'
+                + '</div>';
+        }
+
+        var stemHtml = QuestionRenderer.renderStem(q);
+        var explanationHtml = '';
+        if (q.explanation) {
+            explanationHtml = '<div class="mt-2 p-2 bg-light rounded small text-muted"><strong>Giải thích:</strong> ' + q.explanation + '</div>';
+        }
+
+        return '<div class="review-q-item">'
+            + '<div class="d-flex align-items-center gap-2 mb-2">'
+            + '<span class="badge bg-primary">Câu ' + (idx+1) + '</span>'
+            + '<span class="small text-muted">' + qq.points + ' điểm</span>'
+            + '</div>'
+            + '<div class="mb-3" style="font-size:0.9rem;">' + stemHtml + '</div>'
+            + '<div>' + reviewHtml + '</div>'
+            + explanationHtml
+            + '</div>';
+    }).join('');
 }
 
 init();

@@ -50,6 +50,7 @@ QUY TẮC CẤU TRÚC 3 PHẦN (MÔ HÌNH HỆ THỐNG):
 
 2. true_false (PHẦN II - Trắc nghiệm Đúng/Sai):
    - Có 1 đoạn ngữ cảnh (context) và 4 phát biểu độc lập (a, b, c, d). Thí sinh chọn Đúng hoặc Sai cho mỗi ý.
+   - PHẢI TỒN TẠI ÍT NHẤT 1 phát biểu đúng và ít nhất 1 phát biểu sai. KHÔNG ĐƯỢC tất cả đều đúng hoặc tất cả đều sai.
    - SOURCE: "Câu 2: [Ngữ cảnh/Hình ảnh] ... a) ... b) ... c) ... d) ..."
    - BẮT BUỘC: Đưa ngữ cảnh vào `context`, câu lệnh "Xét các phát biểu sau" vào `text`, 4 ý vào `options`.
    - JSON: {"question_type": "true_false", "context": "...", "text": "...", "options": [{"text": "...", "is_correct": bool}, ...]}
@@ -101,12 +102,15 @@ PHẠM VI NỘI DUNG:
 CẤU TRÚC CHI TIẾT (TUÂN THỦ TUYỆT ĐỐI):
 
 1. multiple_choice (Trắc nghiệm 4 lựa chọn):
-   - Có 4 phương án A, B, C, D. Chỉ 1 đáp án đúng.
+   - Có 4 phương án A, B, C, D. CHỈ DUY NHẤT 1 đáp án đúng (is_correct: true). 3 cái còn lại là sai.
+   - TUYỆT ĐỐI KHÔNG ĐƯỢC: tất cả đều đúng hoặc tất cả đều sai.
    - Các phương án phải đồng nhất về cấu trúc, độ dài và kết thúc bằng dấu chấm (.).
 
 2. true_false (Trắc nghiệm Đúng/Sai):
    - `context`: Bối cảnh (5-10 dòng) mang tính thực tiễn + 1 câu liên kết.
-   - 4 ý hỏi (a, b, c, d) trong `options` dựa vào bối cảnh.
+   - PHẢI CÓ ĐÚNG SỐ LƯỢNG phát biểu (options) theo yêu cầu. Mặc định là 4 ý hỏi (a, b, c, d).
+   - PHẢI TỒN TẠI ÍT NHẤT 1 phát biểu đúng (is_correct: true) và ít nhất 1 phát biểu sai.
+   - TUYỆT ĐỐI KHÔNG ĐƯỢC: tất cả đều đúng hoặc tất cả đều sai.
 
 3. short_answer (Trắc nghiệm trả lời ngắn):
    - Đáp án là một số cụ thể trong `correct_answer_text`.
@@ -700,6 +704,40 @@ class AIGeneratorService:
                 skipped += 1
                 continue
 
+            # === VALIDATION: Kiểm tra phân bố đáp án hợp lệ ===
+            if q_type == 'multiple_choice' and item['options']:
+                correct_count = sum(1 for o in item['options'] if o.get('is_correct'))
+                if correct_count == 0:
+                    # Tất cả đều sai: đánh dấu câu này cần review
+                    print(f"[normalize] WARNING: MC question {idx} has no correct answer. Marking first as correct (needs review).")
+                    item['options'][0]['is_correct'] = True
+                elif correct_count == len(item['options']):
+                    # Tất cả đều đúng: chỉ giữ cái đầu tiên
+                    print(f"[normalize] WARNING: MC question {idx} has ALL correct. Keeping only first.")
+                    for oi, o in enumerate(item['options']):
+                        o['is_correct'] = (oi == 0)
+                elif correct_count > 1:
+                    # Nhiều hơn 1 đáp án đúng: chỉ giữ cái đầu tiên
+                    print(f"[normalize] WARNING: MC question {idx} has {correct_count} correct answers. Keeping only first.")
+                    found_first = False
+                    for o in item['options']:
+                        if o.get('is_correct'):
+                            if found_first:
+                                o['is_correct'] = False
+                            else:
+                                found_first = True
+
+            elif q_type == 'true_false' and item['options']:
+                correct_count = sum(1 for o in item['options'] if o.get('is_correct'))
+                if correct_count == 0:
+                    # Tất cả đều sai: đánh dấu câu đầu tiên là đúng
+                    print(f"[normalize] WARNING: TF question {idx} has no correct statement. Marking first as correct.")
+                    item['options'][0]['is_correct'] = True
+                elif correct_count == len(item['options']):
+                    # Tất cả đều đúng: đánh dấu câu cuối là sai
+                    print(f"[normalize] WARNING: TF question {idx} has ALL correct. Marking last as incorrect.")
+                    item['options'][-1]['is_correct'] = False
+
             normalized.append(item)
 
         if skipped:
@@ -873,6 +911,6 @@ class AIGeneratorService:
         chunks = DocumentChunk.objects.filter(document__classroom_id=class_id).annotate(dist=L2Distance('embedding', query_emb)).order_by('dist')[:10]
         context = cls._build_rag_context(list(chunks), max_total_chars=10000)
         if not context.strip(): return "Lớp chưa có tài liệu tham khảo."
-        prompt = f"Bạn là AI Tutor của NVH Learning. Trả lời dựa trên ngữ cảnh này:\n{context}\n\nHọc sinh hỏi: {question}"
+        prompt = f"Bạn là AI Trợ Giảng của NVH Learning. Trả lời dựa trên ngữ cảnh này:\n{context}\n\nHọc sinh hỏi: {question}"
         resp = ai_client.generate_content(prompt, model=RAG_GENERATION_MODEL)
         return resp.text

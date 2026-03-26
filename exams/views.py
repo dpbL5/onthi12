@@ -14,6 +14,7 @@ from .models import Question, Option, Quiz, QuizQuestion, QuizAttempt, StudentAn
 from .serializers import (
     QuestionSerializer, OptionSerializer, QuizSerializer,
     QuizQuestionSerializer, QuizAttemptSerializer, QuizQuestionPublicSerializer,
+    QuizAttemptReviewSerializer,
 )
 import hashlib
 import os
@@ -493,10 +494,8 @@ class QuizStartView(APIView):
 
         attempt, created = QuizAttempt.objects.get_or_create(quiz=quiz, student=user)
         if attempt.is_completed:
-            return Response(
-                {'detail': 'Bạn đã thi bài này rồi.', 'score': attempt.score},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            serializer = QuizAttemptReviewSerializer(attempt, context={'request': request})
+            return Response(serializer.data)
 
         questions = (
             QuizQuestion.objects
@@ -574,12 +573,9 @@ class QuizSubmitView(APIView):
         attempt.end_time = timezone.now()
         attempt.save()
 
-        return Response({
-            'detail': 'Nộp bài thành công!',
-            'score': final_score,
-            'earned_points': earned_points,
-            'total_points': total_points,
-        })
+        # Return full review data
+        serializer = QuizAttemptReviewSerializer(attempt, context={'request': request})
+        return Response(serializer.data)
 
 
 

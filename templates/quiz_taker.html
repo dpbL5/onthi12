@@ -90,22 +90,53 @@
     </div>
 
     <!-- Result State -->
-    <div id="resultState" style="display:none;align-items:center;justify-content:center;min-height:85vh;">
-        <div style="max-width:440px;width:100%;margin:auto;padding:0 1rem;">
-            <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-xl);overflow:hidden;box-shadow:var(--shadow-lg);text-align:center;">
-                <div style="background:linear-gradient(135deg,var(--color-success),#0ea5e9);padding:2.5rem;">
-                    <div style="width:72px;height:72px;background:rgba(255,255,255,0.2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:2.5rem;margin:0 auto 1rem;color:#fff;"><i class="bi bi-check2-circle"></i></div>
-                    <h2 style="color:#fff;font-weight:800;font-size:1.4rem;margin:0;">Hoàn thành bài thi!</h2>
-                </div>
-                <div style="padding:2rem;">
-                    <div style="background:var(--color-bg);border-radius:var(--radius-lg);padding:1.5rem;margin-bottom:1.5rem;">
-                        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-muted);margin-bottom:0.5rem;">Điểm tổng kết</div>
-                        <div style="font-size:3.5rem;font-weight:800;color:var(--color-primary);line-height:1;letter-spacing:-0.04em;"><span id="finalScore">0</span><span style="font-size:1.25rem;color:var(--color-muted);font-weight:500;">/10</span></div>
-                        <div style="font-size:0.78rem;color:var(--color-muted);margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--color-border);">Điểm đã được ghi nhận và gửi cho giáo viên.</div>
+    <div id="resultState" style="display:none;padding:2rem 0;">
+        <div style="max-width:760px;width:100%;margin:auto;padding:0 1rem;">
+            <!-- Score Header Card -->
+            <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-xl);overflow:hidden;box-shadow:var(--shadow-lg);margin-bottom:1.5rem;">
+                <div id="resultHeaderGradient" style="background:linear-gradient(135deg,var(--color-success),#0ea5e9);padding:2rem 2.5rem;display:flex;align-items:center;gap:2rem;flex-wrap:wrap;">
+                    <div style="text-align:center;flex-shrink:0;">
+                        <div style="width:90px;height:90px;background:rgba(255,255,255,0.2);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;backdrop-filter:blur(8px);">
+                            <span id="finalScore" style="font-size:2.5rem;font-weight:900;color:#fff;line-height:1;">0</span>
+                        </div>
+                        <div style="font-size:0.7rem;color:rgba(255,255,255,0.8);margin-top:0.5rem;text-transform:uppercase;letter-spacing:0.1em;">trên 10 điểm</div>
                     </div>
-                    <a href="/classes/" class="btn btn-outline-primary w-100 mb-2"><i class="bi bi-collection me-2"></i>Về danh sách lớp</a>
-                    <a href="/dashboard/" class="btn btn-light w-100"><i class="bi bi-house me-2"></i>Bảng điều khiển</a>
+                    <div style="flex:1;min-width:200px;">
+                        <h2 id="resultTitle" style="color:#fff;font-weight:800;font-size:1.3rem;margin:0 0 0.5rem;">Kết quả bài thi</h2>
+                        <p style="color:rgba(255,255,255,0.8);font-size:0.82rem;margin:0;">Điểm đã được ghi nhận và gửi cho giáo viên.</p>
+                    </div>
                 </div>
+                <!-- Stats Row -->
+                <div style="padding:1.25rem 2rem;display:flex;gap:1rem;flex-wrap:wrap;" id="resultStatsRow">
+                    <div style="flex:1;min-width:120px;background:var(--color-success-light);border-radius:var(--radius-md);padding:0.875rem 1rem;text-align:center;">
+                        <div style="font-size:1.5rem;font-weight:800;color:var(--color-success);" id="statCorrect">0</div>
+                        <div style="font-size:0.7rem;color:var(--color-muted);text-transform:uppercase;letter-spacing:0.05em;">Câu đúng</div>
+                    </div>
+                    <div style="flex:1;min-width:120px;background:var(--color-danger-light);border-radius:var(--radius-md);padding:0.875rem 1rem;text-align:center;">
+                        <div style="font-size:1.5rem;font-weight:800;color:var(--color-danger);" id="statIncorrect">0</div>
+                        <div style="font-size:0.7rem;color:var(--color-muted);text-transform:uppercase;letter-spacing:0.05em;">Câu sai</div>
+                    </div>
+                    <div style="flex:1;min-width:120px;background:var(--color-bg);border-radius:var(--radius-md);padding:0.875rem 1rem;text-align:center;">
+                        <div style="font-size:1.5rem;font-weight:800;color:var(--color-muted);" id="statUnanswered">0</div>
+                        <div style="font-size:0.7rem;color:var(--color-muted);text-transform:uppercase;letter-spacing:0.05em;">Bỏ trống</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Review Section -->
+            <div id="reviewWrapper" style="display:none; margin-bottom:1.5rem;">
+                <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-xl);padding:1.5rem 2rem;box-shadow:var(--shadow-sm);">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <div class="section-label" style="margin:0;"><i class="bi bi-journal-check me-2"></i>Xem lại bài làm</div>
+                    </div>
+                    <div id="reviewContainer" class="d-flex flex-column gap-3"></div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-xl);padding:1.25rem 2rem;box-shadow:var(--shadow-sm);display:flex;gap:0.75rem;flex-wrap:wrap;">
+                <a href="/classes/" class="btn btn-outline-primary flex-fill"><i class="bi bi-collection me-2"></i>Về danh sách lớp</a>
+                <a href="/dashboard/" class="btn btn-light flex-fill"><i class="bi bi-house me-2"></i>Bảng điều khiển</a>
             </div>
         </div>
     </div>
@@ -136,5 +167,15 @@ const quizId = "{{ quiz_id }}";
 <style>
 .tf-btn { cursor: pointer; transition: var(--transition); }
 .tf-btn.active { color: #fff !important; }
+
+/* Review styles */
+.review-q-item { background: #fff; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1rem; }
+.review-opt { padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); margin-bottom: 0.25rem; font-size: 0.825rem; display: flex; align-items: center; gap: 0.5rem; }
+.review-opt.correct { background: var(--color-success-light); color: var(--color-success); border: 1px solid var(--color-success); }
+.review-opt.incorrect { background: var(--color-danger-light); color: var(--color-danger); border: 1px solid var(--color-danger); }
+.review-opt.student-selected { border-width: 2px; }
+.review-badge { font-size: 0.65rem; font-weight: 800; text-transform: uppercase; padding: 0.15rem 0.4rem; border-radius: 4px; }
+.review-badge.correct { background: var(--color-success); color: #fff; }
+.review-badge.incorrect { background: var(--color-danger); color: #fff; }
 </style>
 {% endblock %}

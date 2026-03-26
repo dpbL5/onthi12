@@ -318,3 +318,55 @@ class QuizQuestionPublicSerializer(serializers.ModelSerializer):
     class Meta:
         model = QuizQuestion
         fields = ['id', 'question', 'order', 'points']
+
+# ─── Review (Student) Serializers (Post-Exam) ──────────────────────────────
+
+class OptionReviewSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Option
+        fields = ['id', 'text', 'content_json', 'is_correct', 'explanation']
+
+
+class QuestionReviewSerializer(serializers.ModelSerializer):
+    options = OptionReviewSerializer(many=True, read_only=True)
+    question_images = QuestionImageSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Question
+        fields = [
+            'id', 'question_type', 'text', 'content_json', 'context', 
+            'image', 'options', 'question_images', 'correct_answer_text', 'explanation'
+        ]
+
+
+class StudentAnswerReviewSerializer(serializers.ModelSerializer):
+    is_correct = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = StudentAnswer
+        fields = ['id', 'quiz_question', 'selected_option', 'answer_text', 'is_correct']
+
+    def get_is_correct(self, obj):
+        return obj.is_correct()
+
+
+
+class QuizQuestionReviewSerializer(serializers.ModelSerializer):
+    question = QuestionReviewSerializer(read_only=True)
+    
+    class Meta:
+        model = QuizQuestion
+        fields = ['id', 'question', 'order', 'points']
+
+
+class QuizAttemptReviewSerializer(serializers.ModelSerializer):
+    answers = StudentAnswerReviewSerializer(many=True, read_only=True)
+    questions = serializers.SerializerMethodField()
+
+    class Meta:
+        model = QuizAttempt
+        fields = ['id', 'quiz', 'score', 'is_completed', 'answers', 'questions']
+
+    def get_questions(self, obj):
+        quiz_questions = QuizQuestion.objects.filter(quiz=obj.quiz).select_related('question').prefetch_related('question__options', 'question__question_images__image')
+        return QuizQuestionReviewSerializer(quiz_questions, many=True, context=self.context).data

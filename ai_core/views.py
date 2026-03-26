@@ -42,7 +42,7 @@ class RAGChatbotView(APIView):
     def _make_chat_cache_key(class_id, question):
         normalized_question = re.sub(r'\s+', ' ', str(question or '')).strip().lower()
         digest = hashlib.sha256(f"{class_id}|{normalized_question}".encode('utf-8')).hexdigest()
-        return f"ai_tutor:chat:{digest}"
+        return f"ai_tro_giang:chat:{digest}"
 
     def post(self, request):
         if not ai_client.is_configured():
@@ -56,7 +56,7 @@ class RAGChatbotView(APIView):
 
         # --- Rate Limiting: 1 minute per question ---
         user_id = request.user.id
-        cache_key = f"ai_tutor_last_chat_{user_id}"
+        cache_key = f"ai_tro_giang_last_chat_{user_id}"
         last_chat_time = cache.get(cache_key)
         
         if last_chat_time:
