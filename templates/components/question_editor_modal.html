@@ -39,7 +39,7 @@
 
                                     <div class="row g-3 mb-4">
                                         <div class="col-md-6 border-end">
-                                            <label class="form-label fw-bold text-primary">
+                                            <label id="editorMainLabel" class="form-label fw-bold text-primary">
                                                 <i class="bi bi-pencil-square me-1"></i>Nội dung câu hỏi
                                             </label>
                                             <textarea id="editorText" name="editorText" class="form-control" 
@@ -58,9 +58,35 @@
                                     </div>
                                     
                                     <div class="mb-3" id="editorContextWrapper" style="display: none;">
-                                        <label class="form-label fw-bold">Ngữ cảnh (dùng cho dạng Đúng/Sai)</label>
-                                        <textarea id="editorContext" class="form-control" rows="3"
-                                            placeholder="Nhập đoạn văn, ngữ cảnh chung cho 4 câu hỏi con..."></textarea>
+                                        <!-- ① Nội dung câu hỏi (câu đề bài chính) -->
+                                        <div class="mb-3 p-3 rounded border bg-white">
+                                            <label class="form-label fw-bold text-primary mb-1">
+                                                <i class="bi bi-pencil-square me-1"></i>① Nội dung câu hỏi
+                                            </label>
+                                            <textarea id="editorTfQuestion" class="form-control form-control-sm" rows="2"
+                                                placeholder="Nhập nội dung / đề bài câu hỏi chính..."></textarea>
+                                        </div>
+
+                                        <!-- ② Ngữ cảnh / Bối cảnh -->
+                                        <div class="mb-3 p-3 rounded border bg-white">
+                                            <label class="form-label fw-bold mb-1">
+                                                <i class="bi bi-book me-1"></i>② Ngữ cảnh / Bối cảnh
+                                            </label>
+                                            <textarea id="editorContext" class="form-control" rows="4"
+                                                placeholder="Nhập đoạn văn, ngữ cảnh chung cho 4 phát biểu..."></textarea>
+                                        </div>
+
+                                        <!-- ③ Câu dẫn "Sau đây là..." -->
+                                        <div class="p-3 rounded border bg-white">
+                                            <label class="form-label fw-bold text-info mb-1">
+                                                <i class="bi bi-chat-quote me-1"></i>③ Câu dẫn (Lệnh hỏi)
+                                            </label>
+                                            <div class="text-muted small mb-2">
+                                                Ví dụ: <em>"Sau đây là các nhận định của một học sinh về kim loại kiềm như sau:"</em>
+                                            </div>
+                                            <textarea id="editorTfText" class="form-control form-control-sm" rows="2"
+                                                placeholder="Sau đây là các nhận định/nhận xét của ... về ... như sau:"></textarea>
+                                        </div>
                                     </div>
 
                                     <!-- Image Gallery moved here -->

@@ -39,6 +39,21 @@ const QuestionEditor = {
             textEl.addEventListener('input', () => this.updatePreview());
         }
 
+        const tfTextEl = document.getElementById('editorTfText');
+        if (tfTextEl) {
+            tfTextEl.addEventListener('input', () => this.updatePreview());
+        }
+
+        const tfQEl = document.getElementById('editorTfQuestion');
+        if (tfQEl) {
+            tfQEl.addEventListener('input', () => this.updatePreview());
+        }
+
+        const ctxEl = document.getElementById('editorContext');
+        if (ctxEl) {
+            ctxEl.addEventListener('input', () => this.updatePreview());
+        }
+
         const saveBtn = document.getElementById('btnEditorSave');
         if (saveBtn) {
             saveBtn.addEventListener('click', () => this.handleSave());
@@ -117,6 +132,12 @@ const QuestionEditor = {
         if (form) form.reset();
         const textEl = document.getElementById('editorText');
         if (textEl) textEl.value = '';
+        const tfQEl = document.getElementById('editorTfQuestion');
+        if (tfQEl) tfQEl.value = '';
+        const tfTextEl = document.getElementById('editorTfText');
+        if (tfTextEl) tfTextEl.value = '';
+        const ctxEl = document.getElementById('editorContext');
+        if (ctxEl) ctxEl.value = '';
         document.getElementById('editorError').textContent = '';
         document.getElementById('editorImageStatus').textContent = '';
         document.getElementById('editorImageList').innerHTML = '<div class="text-muted small p-2">Lưu câu hỏi trước khi quản lý ảnh đính kèm chi tiết.</div>';
@@ -152,13 +173,29 @@ const QuestionEditor = {
     fillData(q) {
         document.getElementById('editorType').value = q.question_type || 'multiple_choice';
         document.getElementById('editorDiff').value = q.difficulty || 'medium';
-        document.getElementById('editorContext').value = q.context || '';
         
         if (q.subject) document.getElementById('editorSubject').value = q.subject;
         
         const qText = q.text || (Array.isArray(q.content_json) ? this.extractTextFromBlocks(q.content_json) : '');
+        const qContext = q.context || '';
+        const qQuestionText = q.question_text || '';
         const textEl = document.getElementById('editorText');
-        if (textEl) textEl.value = qText;
+        const tfQEl = document.getElementById('editorTfQuestion');
+        const tfTextEl = document.getElementById('editorTfText');
+        const ctxEl = document.getElementById('editorContext');
+
+        if (q.question_type === 'true_false') {
+            // 3-field layout: editorTfQuestion = question_text, editorContext = context, editorTfText = text (stem)
+            if (textEl) textEl.value = '';
+            if (tfQEl) tfQEl.value = qQuestionText;
+            if (ctxEl) ctxEl.value = qContext;
+            if (tfTextEl) tfTextEl.value = qText;
+        } else {
+            if (textEl) textEl.value = qText;
+            if (tfQEl) tfQEl.value = '';
+            if (ctxEl) ctxEl.value = '';
+            if (tfTextEl) tfTextEl.value = '';
+        }
 
         this.renderOptionFields();
 
@@ -195,12 +232,41 @@ const QuestionEditor = {
         }
     },
 
+    _getTfText() {
+        // Returns the effective question text for true/false questions
+        const tfEl = document.getElementById('editorTfText');
+        if (tfEl && tfEl.value.trim()) return tfEl.value.trim();
+        return 'Sau đây là các nhận định/nhận xét như sau:';
+    },
+
     renderOptionFields() {
         const type = document.getElementById('editorType').value;
         const container = document.getElementById('editorOptionsContainer');
         const ctxWrap = document.getElementById('editorContextWrapper');
+        const mainLabel = document.getElementById('editorMainLabel');
+        const mainText = document.getElementById('editorText');
 
-        if (ctxWrap) ctxWrap.style.display = (type === 'true_false') ? 'block' : 'none';
+        if (type === 'true_false') {
+            if (ctxWrap) ctxWrap.style.display = 'block';
+            if (mainLabel) mainLabel.innerHTML = '<i class="bi bi-pencil-square me-1"></i>Nội dung câu hỏi';
+            if (mainText) {
+                mainText.placeholder = 'Nhập nội dung câu hỏi...';
+                mainText.style.display = 'none';
+            }
+            
+            // Pre-fill stem if empty
+            const tfTextEl = document.getElementById('editorTfText');
+            if (tfTextEl && !tfTextEl.value.trim()) {
+                tfTextEl.value = 'Sau đây là các nhận định/nhận xét của ... về ... như sau:';
+            }
+        } else {
+            if (ctxWrap) ctxWrap.style.display = 'none';
+            if (mainLabel) mainLabel.innerHTML = '<i class="bi bi-pencil-square me-1"></i>Nội dung câu hỏi';
+            if (mainText) {
+                mainText.placeholder = 'Nhập nội dung câu hỏi...';
+                mainText.style.display = '';
+            }
+        }
 
         let html = '';
         if (type === 'multiple_choice') {
@@ -248,17 +314,29 @@ const QuestionEditor = {
         const text = (document.getElementById('editorText')?.value || '').trim();
         const difficulty = document.getElementById('editorDiff').value;
         const qType = document.getElementById('editorType').value;
-        const context = (document.getElementById('editorContext').value || '').trim();
         const subject = document.getElementById('editorSubject').value;
 
-        if (!text) { errEl.textContent = "Bạn chưa nhập nội dung câu hỏi."; return; }
+        let effectiveText, effectiveContext, effectiveQuestionText;
+
+        if (qType === 'true_false') {
+            effectiveQuestionText = (document.getElementById('editorTfQuestion')?.value || '').trim();
+            effectiveContext = (document.getElementById('editorContext')?.value || '').trim();
+            effectiveText = this._getTfText(); // stem from editorTfText
+            if (!effectiveText) { errEl.textContent = "Vui lòng nhập câu dẫn (Lệnh hỏi)."; return; }
+        } else {
+            effectiveText = text;
+            effectiveContext = '';
+            effectiveQuestionText = '';
+            if (!effectiveText) { errEl.textContent = "Bạn chưa nhập nội dung câu hỏi."; return; }
+        }
 
         let payload = {
             question_type: qType,
-            text: text,
-            content_json: this._buildContentJson(text),
+            text: effectiveText,
+            content_json: this._buildContentJson(effectiveText),
             difficulty: difficulty,
-            context: context,
+            context: effectiveContext,
+            question_text: effectiveQuestionText,
             subject: subject,
             question_images: this.state.currentImages.map(img => ({
                 sha256: img.image?.sha256 || img.sha256 || '',
@@ -492,21 +570,41 @@ const QuestionEditor = {
     },
 
     updatePreview() {
+        const qType = document.getElementById('editorType')?.value || 'multiple_choice';
         const text = (document.getElementById('editorText')?.value || '').trim();
+        const tfQText = (document.getElementById('editorTfQuestion')?.value || '').trim();
+        const tfCtx = (document.getElementById('editorContext')?.value || '').trim();
+        const tfText = (document.getElementById('editorTfText')?.value || '').trim();
         const previewEl = document.getElementById('editorPreview');
         if (!previewEl) return;
         
-        if (!text) {
-            previewEl.innerHTML = '<span class="text-muted small">Bắt đầu nhập để xem trước...</span>';
-            return;
+        const previewTitle = document.getElementById('editorPreviewTitle');
+        const previewContent = document.getElementById('editorPreviewContent');
+        if (!previewTitle || !previewContent) return;
+
+        let dummyQ;
+        if (qType === 'true_false') {
+            dummyQ = {
+                question_type: 'true_false',
+                question_text: tfQText,
+                context: tfCtx,
+                text: tfText,
+                question_images: this.state.currentImages
+            };
+        } else {
+            dummyQ = {
+                question_type: qType,
+                text: text,
+                question_images: this.state.currentImages,
+                content_json: this._buildContentJson(text)
+            };
         }
 
-        const dummyQ = {
-            text: text,
-            question_images: this.state.currentImages,
-            content_json: this._buildContentJson(text)
-        };
-        previewEl.innerHTML = QuestionRenderer.renderStem(dummyQ);
+        const previewHtml = QuestionRenderer.renderStem(dummyQ);
+        
+        const displayTitle = tfQText || text; // Use T/F question text or general text for title
+        previewTitle.innerHTML = `<span class="badge bg-primary me-2">Xem trước</span> <strong>${displayTitle.substring(0, 50)}${displayTitle.length > 50 ? '...' : ''}</strong>`;
+        previewContent.innerHTML = previewHtml;
     },
 
     _buildContentJson(text) {

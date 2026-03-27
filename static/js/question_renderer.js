@@ -23,10 +23,20 @@ const QuestionRenderer = {
         }
         
         // 1. Render blocks or text
+        let contentHtml = '';
         if (blocks.length > 0) {
-            html = this._renderBlocks(blocks, imageMap);
+            contentHtml = this._renderBlocks(blocks, imageMap);
         } else if (text) {
-            html = this._renderPlainWithImages(text, imageMap);
+            contentHtml = this._renderPlainWithImages(text, imageMap);
+        }
+
+        // 1.5 Special handling for true_false fields (question_text, context)
+        if (q.question_type === 'true_false') {
+            const qHeading = q.question_text ? `<div class="fw-bold mb-2 text-primary" style="font-size: 1.1rem;">${this._escapeHtml(q.question_text)}</div>` : '';
+            const ctxBox = q.context ? `<div class="bg-light p-3 mb-3 rounded border-start border-4 border-secondary shadow-sm small fst-italic"><strong>Ngữ cảnh:</strong> ${this._escapeHtml(q.context)}</div>` : '';
+            html += qHeading + ctxBox + contentHtml;
+        } else {
+            html += contentHtml;
         }
         
         // 2. Append unreferenced images at the bottom

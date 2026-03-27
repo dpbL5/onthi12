@@ -81,19 +81,18 @@ function renderQuestions() {
                 </div>`;
             }).join('');
         } else if (qType === 'true_false') {
-            contentHtml = (q.context ? `<div style="background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:1rem;margin-bottom:1rem;font-size:0.875rem;font-style:italic;">${escapeHtml(q.context)}</div>` : '')
-                + q.options.map((opt, i) => {
-                    const optBlocksHtml = QuestionRenderer.renderOption(opt, q.question_images);
-                    return `<div style="border:1px solid var(--color-border);border-radius:var(--radius-md);padding:0.875rem 1rem;margin-bottom:0.5rem;display:flex;justify-content:space-between;align-items:center;gap:1rem;">
-                        <div style="font-size:0.875rem;flex:1;">
-                            <div>${String.fromCharCode(97+i)}) ${optBlocksHtml}</div>
-                        </div>
-                        <div style="display:flex;gap:0.5rem;flex-shrink:0;">
-                            <label class="btn btn-sm btn-outline-success tf-btn" id="tf_${qq.id}_${opt.id}_t" onclick="selectTF(${qq.id},${opt.id},true)"><input type="radio" name="tf_${qq.id}_${opt.id}" value="true" class="d-none">Đúng</label>
-                            <label class="btn btn-sm btn-outline-danger tf-btn" id="tf_${qq.id}_${opt.id}_f" onclick="selectTF(${qq.id},${opt.id},false)"><input type="radio" name="tf_${qq.id}_${opt.id}" value="false" class="d-none">Sai</label>
-                        </div>
-                    </div>`;
-                }).join('');
+            contentHtml = q.options.map((opt, i) => {
+                const optBlocksHtml = QuestionRenderer.renderOption(opt, q.question_images);
+                return `<div style="border:1px solid var(--color-border);border-radius:var(--radius-md);padding:0.875rem 1rem;margin-bottom:0.5rem;display:flex;justify-content:space-between;align-items:center;gap:1rem;">
+                    <div style="font-size:0.875rem;flex:1;">
+                        <div>${String.fromCharCode(97+i)}) ${optBlocksHtml}</div>
+                    </div>
+                    <div style="display:flex;gap:0.5rem;flex-shrink:0;">
+                        <label class="btn btn-sm btn-outline-success tf-btn" id="tf_${qq.id}_${opt.id}_t" onclick="selectTF(${qq.id},${opt.id},true)"><input type="radio" name="tf_${qq.id}_${opt.id}" value="true" class="d-none">Đúng</label>
+                        <label class="btn btn-sm btn-outline-danger tf-btn" id="tf_${qq.id}_${opt.id}_f" onclick="selectTF(${qq.id},${opt.id},false)"><input type="radio" name="tf_${qq.id}_${opt.id}" value="false" class="d-none">Sai</label>
+                    </div>
+                </div>`;
+            }).join('');
         } else if (qType === 'short_answer') {
             contentHtml = `<input type="text" class="form-control" id="sa_${qq.id}" placeholder="Nhập đáp án..." oninput="selectSA(${qq.id})"><div class="form-text small">Nhập chính xác kết quả (số, công thức, text...)</div>`;
         }
@@ -108,6 +107,7 @@ function renderQuestions() {
                     ${typeBadges[qType]||''}
                     <span style="font-size:0.75rem;color:var(--color-muted);">${qq.points} điểm</span>
                 </div>
+                ${q.question_text ? `<div class="fw-bold mb-3 text-primary" style="font-size:1.1rem;">${escapeHtml(q.question_text)}</div>` : ''}
                 ${questionHtml}
                 <div class="mt-4">${contentHtml}</div>
             </div>
@@ -286,8 +286,7 @@ function renderReview(questions, answers) {
             }
 
         } else if (qType === 'true_false') {
-            var ctxHtml = q.context ? '<div class="small text-muted mb-2 fst-italic">Ngữ cảnh: ' + escapeHtml(q.context) + '</div>' : '';
-            reviewHtml = ctxHtml + q.options.map(function(opt, i) {
+            reviewHtml = q.options.map(function(opt, i) {
                 var ans = studentAns.find(function(a) { return a.selected_option === opt.id; });
                 var isCorrect = ans ? ans.is_correct : false;
                 var statusClass = ans ? (isCorrect ? 'correct' : 'incorrect') : '';

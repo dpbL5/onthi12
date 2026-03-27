@@ -52,8 +52,11 @@ QUY TẮC CẤU TRÚC 3 PHẦN (MÔ HÌNH HỆ THỐNG):
    - Có 1 đoạn ngữ cảnh (context) và 4 phát biểu độc lập (a, b, c, d). Thí sinh chọn Đúng hoặc Sai cho mỗi ý.
    - PHẢI TỒN TẠI ÍT NHẤT 1 phát biểu đúng và ít nhất 1 phát biểu sai. KHÔNG ĐƯỢC tất cả đều đúng hoặc tất cả đều sai.
    - SOURCE: "Câu 2: [Ngữ cảnh/Hình ảnh] ... a) ... b) ... c) ... d) ..."
-   - BẮT BUỘC: Đưa ngữ cảnh vào `context`, câu lệnh "Xét các phát biểu sau" vào `text`, 4 ý vào `options`.
-   - JSON: {"question_type": "true_false", "context": "...", "text": "...", "options": [{"text": "...", "is_correct": bool}, ...]}
+   - QUY TẮC MAPPING 3 PHẦN:
+       1. `question_text`: Vấn đề chính/Tiêu đề câu hỏi (Ví dụ: "Xét tính dư thừa dữ liệu").
+       2. `context`: Đoạn văn bản ngữ cảnh, bảng biểu, bối cảnh tình huống.
+       3. `text`: PHẢI là câu lệnh hỏi dạng: "Sau đây là các nhận định của [nguồn] về [chủ đề] như sau:".
+   - JSON: {"question_type": "true_false", "question_text": "...", "context": "...", "text": "Sau đây là các nhận định...", "options": [{"text": "...", "is_correct": bool}, ...]}
 
 3. short_answer (PHẦN III - Câu hỏi trả lời ngắn):
    - Câu hỏi tính toán, yêu cầu điền đáp số là số cụ thể.
@@ -77,7 +80,7 @@ JSON:
   {
     "question_type": "true_false",
     "context": "Cho sơ đồ thí nghiệm sau:\n[IMG:abcd1234]",
-    "text": "Xét các phát biểu sau đây:",
+    "text": "Sau đây là các nhận định của học sinh về thí nghiệm khử CuO bằng H2 như sau:",
     "options": [
       {"text": "CuO bị khử bởi khí H2.", "is_correct": false},
       {"text": "Trong ống nghiệm có các giọt nước đọng lại.", "is_correct": true}
@@ -107,7 +110,9 @@ CẤU TRÚC CHI TIẾT (TUÂN THỦ TUYỆT ĐỐI):
    - Các phương án phải đồng nhất về cấu trúc, độ dài và kết thúc bằng dấu chấm (.).
 
 2. true_false (Trắc nghiệm Đúng/Sai):
-   - `context`: Bối cảnh (5-10 dòng) mang tính thực tiễn + 1 câu liên kết.
+   - `question_text`: Nội dung câu hỏi / Tiêu đề (ngắn gọn, ví dụ: "Về sự ăn mòn kim loại").
+   - `context`: Bối cảnh / Đoạn văn tình huống (5-10 dòng) mang tính thực tiễn.
+   - `text`: Câu dẫn (Stem) PHẢI theo mẫu: "Sau đây là các nhận định/nhận xét của [nguồn/tác giả] về [{topic}] như sau:".
    - PHẢI CÓ ĐÚNG SỐ LƯỢNG phát biểu (options) theo yêu cầu. Mặc định là 4 ý hỏi (a, b, c, d).
    - PHẢI TỒN TẠI ÍT NHẤT 1 phát biểu đúng (is_correct: true) và ít nhất 1 phát biểu sai.
    - TUYỆT ĐỐI KHÔNG ĐƯỢC: tất cả đều đúng hoặc tất cả đều sai.
@@ -118,8 +123,9 @@ CẤU TRÚC CHI TIẾT (TUÂN THỦ TUYỆT ĐỐI):
 ĐỊNH DẠNG JSON ĐẦU RA (BẮT BUỘC):
 Trả về một JSON array, mỗi object bao gồm các trường:
 - "question_type": "multiple_choice", "true_false", hoặc "short_answer"
-- "text": Nội dung câu hỏi (với True/False là câu lệnh hỏi, không bao gồm bối cảnh).
-- "context": (Chỉ dành cho true_false) Bối cảnh tình huống. Với loại khác để null.
+- "question_text": (Bắt buộc cho true_false) Vấn đề chính cần hỏi.
+- "text": Nội dung câu hỏi (với True/False là CÂU DẪN 'Sau đây là...', không bao gồm bối cảnh).
+- "context": (Chỉ dành cho true_false) Bối cảnh / Ngữ cảnh tình huống bài tập.
 - "options": (Cho multiple_choice và true_false) Array các object {{"text": "...", "is_correct": true/false}}
 - "correct_answer_text": (Chỉ cho short_answer) Đáp án là con số.
 - "difficulty": "{difficulty}"
