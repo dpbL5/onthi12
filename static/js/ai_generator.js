@@ -212,6 +212,9 @@ const AIGenerator = {
         }
 
         board.innerHTML = drafts.map((q, index) => {
+            const typeLabel = this.getTypeBadge(q.question_type);
+            const diffLabel = this.getDiffBadge(q.difficulty);
+            const unresolved = !this.hasConfiguredAnswer(q);
             let contextHtml = '';
             if (q.question_type === 'true_false') {
                 // For True/False, we have a possible 3-part structure: question_text, context, and text (stem)
