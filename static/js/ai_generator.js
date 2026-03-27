@@ -216,12 +216,8 @@ const AIGenerator = {
             const diffLabel = this.getDiffBadge(q.difficulty);
             const unresolved = !this.hasConfiguredAnswer(q);
             let contextHtml = '';
-            if (q.question_type === 'true_false') {
-                // For True/False, we have a possible 3-part structure: question_text, context, and text (stem)
-                const qText = q.question_text ? `<div class="fw-bold mb-2 text-primary" style="font-size: 1.05rem;">${this.escapeHtml(q.question_text)}</div>` : '';
-                const ctx = q.context ? `<div class="bg-light p-2 mb-2 rounded small border-start border-3 border-secondary text-muted"><strong>Ngữ cảnh:</strong> ${this.renderContext(q.context)}</div>` : '';
-                contextHtml = qText + ctx;
-            } else if (q.context) {
+            // true_false: renderQuestionStem already renders question_text + context, skip here
+            if (q.question_type !== 'true_false' && q.context) {
                 contextHtml = `<div class="bg-light p-2 mb-2 rounded small border-start border-3 border-secondary text-muted"><strong>Ngữ cảnh:</strong> ${this.renderContext(q.context)}</div>`;
             }
             
