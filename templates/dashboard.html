@@ -63,6 +63,55 @@
                         <div id="reportsPagination" class="p-3 border-top d-flex justify-content-center bg-light-subtle"></div>
                     </div>
                 </div>
+
+                <!-- AI Learning Analytics Section (Student perspective) -->
+                <div id="analyticsSection" style="display:none;" class="animate-in mt-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="section-label mb-0"><i class="bi bi-graph-up-arrow text-primary me-2"></i>Phân tích & Tiến độ học tập</div>
+                    </div>
+                    
+                    <div class="row g-3">
+                        <!-- Progress Chart -->
+                        <div class="col-md-7">
+                            <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:1.25rem;height:100%;">
+                                <h6 class="fw-bold mb-3 small text-muted">Biểu đồ điểm số qua các bài thi</h6>
+                                <canvas id="progressChart" style="max-height: 250px;"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Weaknesses Analysis -->
+                        <div class="col-md-5">
+                            <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:1.25rem;height:100%;">
+                                <h6 class="fw-bold mb-3 small text-danger"><i class="bi bi-shield-exclamation me-1"></i>Vùng kiến thức yếu cần cải thiện</h6>
+                                <ul id="weaknessList" class="list-group list-group-flush small">
+                                    <li class="list-group-item text-muted text-center py-4 border-0">Chưa có đủ dữ liệu để phân tích.</li>
+                                </ul>
+                                
+                                <!-- AI Action Buttons -->
+                                <div id="aiLearningActions" class="mt-3 text-center" style="display:none;">
+                                    <button class="btn btn-sm btn-outline-primary mb-2 w-100" onclick="getPersonalizedPath()">
+                                        <i class="bi bi-magic me-1"></i>Gợi ý lộ trình ôn tập
+                                    </button>
+                                    <button class="btn btn-sm btn-danger w-100" onclick="generateQuickTest()">
+                                        <i class="bi bi-lightning-charge-fill me-1"></i>Tạo Quick Test ôn tập ngay
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Teacher/Admin Analytics Section -->
+            <div id="teacherAnalyticsSection" style="display:none;" class="animate-in mt-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div class="section-label mb-0"><i class="bi bi-bar-chart-line-fill text-primary me-2"></i>Điểm trung bình bài thi (Giáo viên/Quản trị)</div>
+                </div>
+                <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:1.25rem;">
+                    <h6 class="fw-bold mb-3 small text-muted">Top 15 bài thi gần nhất theo lớp</h6>
+                    <canvas id="teacherProgressChart" style="max-height: 260px;"></canvas>
+                    <p id="teacherProgressMessage" class="mt-2 small text-muted">Đang tải dữ liệu...</p>
+                </div>
             </div>
 
             <!-- Right: Activity Feed -->
@@ -76,5 +125,24 @@
     </div>
 </div>
 
+<!-- AI Insight Modal -->
+<div class="modal fade" id="aiPathModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold"><i class="bi bi-robot text-primary me-2"></i>AI Đề Xuất Lộ Trình</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="aiPathModalBody">
+                <div class="text-center py-4">
+                    <div class="spinner-grow text-primary" role="status"></div>
+                    <p class="mt-3 text-muted">AI đang phân tích dữ liệu lịch sử của bạn...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="{% static 'js/dashboard.js' %}"></script>
 {% endblock %}

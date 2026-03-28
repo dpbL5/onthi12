@@ -179,6 +179,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('teacherName').textContent = teacherName;
         if (currentRole === 'teacher' || currentRole === 'admin') {
             document.getElementById('teacherActionGroup').style.display = 'block';
+            const teacherAddPanel = document.getElementById('teacherAddStudentPanel');
+            if (teacherAddPanel) teacherAddPanel.classList.remove('d-none');
             document.getElementById('statTotalQuizzes').textContent = cls.total_quizzes || 0;
             document.getElementById('statTotalAttempts').textContent = cls.total_attempts || 0;
             document.getElementById('statAvgScore').textContent = cls.avg_score || 0;
@@ -242,18 +244,88 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await fetch(`/api/classes/${classId}/students/`, {headers: authHeaders()});
             const list = document.getElementById('memberListSmall');
+            const memberCountBadge = document.getElementById('memberCountBadge');
             if (res.status === 403) { list.innerHTML = '<li class="list-group-item text-muted small py-3">Không có quyền xem.</li>'; return; }
             const data = await res.json();
+            if (memberCountBadge) memberCountBadge.textContent = data.students?.length || 0;
             if (!data.students?.length) { list.innerHTML = '<li class="list-group-item text-muted small py-3 text-center">Chưa có học sinh.</li>'; return; }
+            
+            const isTeacher = currentRole === 'teacher' || currentRole === 'admin';
+            
             list.innerHTML = data.students.map(s => {
                 const name = s.full_name || s.username;
                 const initial = name.charAt(0).toUpperCase();
-                return `<li class="list-group-item d-flex align-items-center gap-3 py-2 px-3 border-0 border-bottom">
-                    <div style="width:34px;height:34px;border-radius:50%;background:var(--color-primary-light);color:var(--color-primary);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;flex-shrink:0;">${initial}</div>
-                    <div><div style="font-weight:600;font-size:0.875rem;">${name}</div><div style="font-size:0.72rem;color:var(--color-muted);">@${s.username}</div></div>
+                
+                let removeBtn = '';
+                if (isTeacher) {
+                    removeBtn = `<button class="btn btn-sm text-danger p-1" title="Xóa học sinh" onclick="removeStudent('${s.id}', '${name}')">
+                        <i class="bi bi-trash"></i>
+                    </button>`;
+                }
+
+                return `<li class="list-group-item d-flex justify-content-between align-items-center gap-2 py-2 px-3 border-0 border-bottom">
+                    <div class="d-flex align-items-center gap-3">
+                        <div style="width:34px;height:34px;border-radius:50%;background:var(--color-primary-light);color:var(--color-primary);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;flex-shrink:0;">${initial}</div>
+                        <div><div style="font-weight:600;font-size:0.875rem;">${name}</div><div style="font-size:0.72rem;color:var(--color-muted);">@${s.username}</div></div>
+                    </div>
+                    ${removeBtn}
                 </li>`;
             }).join('');
         } catch(e) { document.getElementById('memberListSmall').innerHTML = '<li class="list-group-item text-danger small">Lỗi tải thành viên.</li>'; }
+    }
+
+    window.submitAddStudent = async function(clsId) {
+        const input = document.getElementById('addStudentInput');
+        const identifier = input.value.trim();
+        if (!identifier) return;
+        
+        const btn = document.getElementById('addStudentBtn');
+        const msg = document.getElementById('addStudentMsg');
+        btn.disabled = true; msg.style.display = 'none';
+        
+        try {
+            const res = await fetch(`/api/classes/${clsId}/students/add/`, {
+                method: 'POST',
+                headers: authHeaders(),
+                body: JSON.stringify({ identifier })
+            });
+            const data = await res.json();
+            
+            msg.style.display = 'block';
+            if (res.ok) {
+                msg.className = 'small mt-2 text-success';
+                msg.innerHTML = '<i class="bi bi-check-circle me-1"></i>' + data.detail;
+                input.value = '';
+                await loadMembers();
+            } else {
+                msg.className = 'small mt-2 text-danger';
+                msg.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>' + (data.detail || 'Có lỗi xảy ra.');
+            }
+        } catch (e) {
+            msg.style.display = 'block';
+            msg.className = 'small mt-2 text-danger';
+            msg.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>Lỗi kết nối.';
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    window.removeStudent = async function(studentId, name) {
+        if (!confirm(`Xóa học sinh ${name} khỏi lớp này?`)) return;
+        try {
+            const res = await fetch(`/api/classes/${window.CLASS_ID}/students/${studentId}/`, {
+                method: 'DELETE',
+                headers: authHeaders()
+            });
+            if (res.ok) {
+                await loadMembers();
+            } else {
+                const data = await res.json().catch(() => ({}));
+                alert(data.detail || 'Xóa thất bại.');
+            }
+        } catch (e) {
+            alert('Lỗi kết nối.');
+        }
     }
 
     window.submitCreateQuiz = async function() {

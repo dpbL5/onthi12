@@ -44,6 +44,14 @@ document.addEventListener('DOMContentLoaded', () => {
         renderKPIs(data.role, data.stats);
         renderActions(data.role);
         renderActivities(data.recent_activities);
+        
+        if (data.role === 'student') {
+            document.getElementById('analyticsSection').style.display = 'block';
+            loadStudentProgress();
+        } else if (data.role === 'teacher' || data.role === 'admin') {
+            document.getElementById('teacherAnalyticsSection').style.display = 'block';
+            loadTeacherAdminProgress();
+        }
     }
     
     function renderKPIs(role, stats) {
@@ -143,6 +151,199 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>`;
         }).join('');
     }
+
+    async function loadStudentProgress() {
+        try {
+            const res = await fetch('/api/exams/student-progress/', { headers: authH() });
+            if (!res.ok) return;
+            const data = await res.json();
+            
+            // Render Graph
+            const ctx = document.getElementById('progressChart').getContext('2d');
+            
+            if (!data.timeline || data.timeline.length === 0) {
+                // Return empty state chart or leave it empty with a message
+                return;
+            }
+
+            const labels = data.timeline.map(t => new Date(t.date).toLocaleDateString('vi-VN'));
+            const scores = data.timeline.map(t => t.score);
+            const titles = data.timeline.map(t => t.quiz_title);
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Điểm số',
+                        data: scores,
+                        borderColor: '#0d6efd',
+                        backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.3,
+                        pointBackgroundColor: '#0d6efd',
+                        pointHoverRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                title: (tooltipItems) => {
+                                    return titles[tooltipItems[0].dataIndex];
+                                },
+                                label: (context) => {
+                                    return 'Điểm: ' + context.parsed.y;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 10,
+                            grid: { borderDash: [5, 5] }
+                        },
+                        x: {
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+
+            // Render Weaknesses
+            const weaknessList = document.getElementById('weaknessList');
+            const aiActions = document.getElementById('aiLearningActions');
+            if (data.weaknesses && data.weaknesses.length > 0) {
+                weaknessList.innerHTML = data.weaknesses.map(w => 
+                    `<li class="list-group-item d-flex align-items-center gap-2 py-2 border-0 border-bottom">
+                        <i class="bi bi-x-circle text-danger"></i>${w}
+                    </li>`
+                ).join('');
+                aiActions.style.display = 'block'; // Show AI actions if there are weaknesses
+            } else if (data.total_completed > 0) {
+                weaknessList.innerHTML = '<li class="list-group-item text-success text-center py-4 border-0"><i class="bi bi-check-circle-fill me-2"></i>Phong độ tuyệt vời! Không phát hiện lỗ hổng kiến thức nghiêm trọng.</li>';
+            }
+
+        } catch (e) {
+            console.error('Lỗi khi tải biểu đồ', e);
+        }
+    }
+
+    async function loadTeacherAdminProgress() {
+        try {
+            const messageEl = document.getElementById('teacherProgressMessage');
+            messageEl.textContent = 'Đang tải dữ liệu...';
+
+            const res = await fetch('/api/exams/teacher-progress/', { headers: authH() });
+            if (!res.ok) {
+                messageEl.textContent = 'Không thể tải dữ liệu hoặc không có quyền.';
+                return;
+            }
+
+            const data = await res.json();
+            if (!data.quizzes || !data.quizzes.length) {
+                messageEl.textContent = 'Chưa có dữ liệu điểm bài thi hoàn thành.';
+                return;
+            }
+
+            const labels = data.quizzes.map(q => `${q.class_name || 'Lớp'} - ${q.quiz_title}`);
+            const avgScores = data.quizzes.map(q => parseFloat(q.average_score));
+            const attemptCounts = data.quizzes.map(q => q.total_attempts);
+
+            const ctx = document.getElementById('teacherProgressChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Điểm trung bình',
+                        data: avgScores,
+                        backgroundColor: 'rgba(13, 110, 253, 0.6)',
+                        borderColor: 'rgba(13, 110, 253, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                title: items => items[0] ? items[0].label : '',
+                                label: ctxInfo => `Điểm TB: ${ctxInfo.parsed.y || 0} - ${attemptCounts[ctxInfo.dataIndex]} lượt`,
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 10,
+                            ticks: {stepSize: 1},
+                            grid: { borderDash: [5,5] }
+                        },
+                        x: {
+                            ticks: { autoSkip: false, maxRotation: 45, minRotation: 0 },
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+
+            messageEl.style.display = 'none';
+        } catch (e) {
+            console.error('Lỗi khi tải dữ liệu giáo viên/admin', e);
+            const messageEl = document.getElementById('teacherProgressMessage');
+            if (messageEl) {
+                messageEl.textContent = 'Lỗi khi tải dữ liệu. Vui lòng thử lại sau.';
+            }
+        }
+    }
+
+    // Global AI functions for inline onClick
+    window.getPersonalizedPath = async function() {
+        // Show modal
+        const modal = new bootstrap.Modal(document.getElementById('aiPathModal'));
+        modal.show();
+        
+        const body = document.getElementById('aiPathModalBody');
+        body.innerHTML = '<div class="text-center py-4"><div class="spinner-grow text-primary" role="status"></div><p class="mt-3 text-muted">AI đang phân tích dữ liệu lịch sử của bạn...</p></div>';
+        
+        try {
+            const res = await fetch('/api/ai/path/', { headers: authH() });
+            const data = await res.json();
+            if(!res.ok) throw new Error(data.error || 'Lỗi hệ thống');
+            
+            // Render markdown to HTML (basic implementation or use a library if available, assuming plain text with basic formatting for now)
+            body.innerHTML = `<div class="p-3" style="line-height: 1.6;">${data.insight.replace(/\\n/g, '<br>').replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>').replace(/### (.*?)\\n/g, '<h5>$1</h5>')}</div>`;
+        } catch (e) {
+            body.innerHTML = `<div class="alert alert-danger m-3"><i class="bi bi-exclamation-triangle-fill me-2"></i> ${e.message}</div>`;
+        }
+    };
+
+    window.generateQuickTest = async function() {
+        if(!confirm('Hệ thống sẽ tạo tự động một bài kiểm tra ngắn gồm các câu hỏi bạn từng làm sai. Bạn đã sẵn sàng làm bài ngay chưa?')) return;
+        
+        try {
+            // Show overlay loader if any
+            const res = await fetch('/api/ai/quick-test/', { 
+                method: 'POST',
+                headers: authH()
+            });
+            const data = await res.json();
+            if(!res.ok) throw new Error(data.error || 'Thất bại');
+            
+            alert(data.message);
+            window.location.href = `/exams/${data.quiz_id}/start/`;
+        } catch (e) {
+            alert('Lỗi: ' + e.message);
+        }
+    };
 
     initDashboard();
 });

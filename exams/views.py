@@ -6,7 +6,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from django.views.decorators.vary import vary_on_headers
 from django.utils import timezone
-from django.db.models import Q
+from django.db.models import Q, Avg, Max, Min, Count
 from django.db import transaction
 from django.core.files.base import ContentFile
 from classes.models import Class
@@ -640,3 +640,142 @@ class ClassAnalyticsView(APIView):
             })
 
         return Response(analytics)
+
+
+class TeacherAdminProgressAPIView(APIView):
+    """Analytics for teacher/admin showing class quiz average scores."""
+    permission_classes = [permissions.IsAuthenticated, IsTeacherOrAdmin]
+
+    def get(self, request):
+        user = request.user
+        role_name = getattr(user.role, 'name', None)
+
+        if role_name == 'teacher':
+            quizzes = Quiz.objects.filter(classroom__teacher=user)
+        else:
+            quizzes = Quiz.objects.all()
+
+        attempts = QuizAttempt.objects.filter(quiz__in=quizzes, is_completed=True)
+        if not attempts.exists():
+            return Response({'quizzes': []})
+
+        quiz_stats = (
+            attempts
+            .values('quiz_id', 'quiz__title', 'quiz__classroom__name')
+            .annotate(
+                average_score=Avg('score'),
+                total_attempts=Count('id'),
+                last_attempt=Max('end_time')
+            )
+            .order_by('-last_attempt')[:20]
+        )
+
+        results = []
+        for item in quiz_stats:
+            results.append({
+                'quiz_id': item['quiz_id'],
+                'quiz_title': item['quiz__title'],
+                'class_name': item['quiz__classroom__name'] or '',
+                'average_score': round(item['average_score'] or 0, 2),
+                'total_attempts': item['total_attempts'],
+                'last_attempt': item['last_attempt'].isoformat() if item['last_attempt'] else None,
+            })
+
+        return Response({'quizzes': results})
+
+
+class StudentProgressAPIView(APIView):
+    """API for both students (viewing themselves) and teachers (viewing a specific student)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        target_student_id = request.query_params.get('student_id')
+        class_id = request.query_params.get('class_id')
+        
+        user = request.user
+        role_name = getattr(user.role, 'name', None)
+        
+        # Determine the target student
+        if role_name == 'student':
+            student = user
+        else:
+            if not target_student_id:
+                return Response({"error": "student_id is required cho giáo viên/quản trị."}, status=status.HTTP_400_BAD_REQUEST)
+            from accounts.models import User
+            try:
+                student = User.objects.get(id=target_student_id)
+            except User.DoesNotExist:
+                return Response({"error": "Học sinh không tồn tại."}, status=status.HTTP_404_NOT_FOUND)
+                
+            # Optional: check if teacher has access to this student's class
+            if class_id:
+                try:
+                    classroom = Class.objects.get(id=class_id)
+                    is_class_teacher = (role_name == 'teacher' and classroom.teacher == user)
+                    if not (role_name == 'admin' or user.is_superuser or is_class_teacher):
+                        return Response({'error': 'Bạn không có quyền xem tiến độ của học sinh lớp này.'}, status=status.HTTP_403_FORBIDDEN)
+                except Class.DoesNotExist:
+                    pass
+        
+        # Query completed attempts
+        attempts = QuizAttempt.objects.filter(student=student, is_completed=True)
+        if class_id:
+            attempts = attempts.filter(quiz__classroom_id=class_id)
+            
+        attempts = attempts.select_related('quiz').order_by('end_time')
+        
+        # Build timeline
+        timeline = []
+        for att in attempts:
+            if att.end_time:
+                timeline.append({
+                    "date": att.end_time.isoformat(),
+                    "quiz_title": att.quiz.title,
+                    "score": att.score
+                })
+                
+        # Build weaknesses analysis
+        subject_stats = {}
+        difficulty_stats = {}
+        
+        answers = StudentAnswer.objects.filter(attempt__in=attempts).select_related('quiz_question__question', 'quiz_question__question__subject')
+        
+        for ans in answers:
+            q = ans.quiz_question.question
+            subj_name = q.subject.name if q.subject else "Chung"
+            diff = q.difficulty
+            
+            is_corr = ans.is_correct()
+            
+            if subj_name not in subject_stats:
+                subject_stats[subj_name] = {'total': 0, 'correct': 0}
+            subject_stats[subj_name]['total'] += 1
+            if is_corr:
+                subject_stats[subj_name]['correct'] += 1
+                
+            if diff not in difficulty_stats:
+                difficulty_stats[diff] = {'total': 0, 'correct': 0}
+            difficulty_stats[diff]['total'] += 1
+            if is_corr:
+                difficulty_stats[diff]['correct'] += 1
+                
+        weaknesses = []
+        for subj, stats in subject_stats.items():
+            if stats['total'] >= 3: # Min questions to determine weakness
+                acc = stats['correct'] / stats['total']
+                if acc < 0.6: # Less than 60% accuracy is considered a weakness
+                    weaknesses.append(f"Môn {subj} (Chính xác {int(acc*100)}%)")
+                    
+        diff_map = {'easy': 'Nhận biết', 'medium': 'Thông hiểu', 'hard': 'Vận dụng'}
+        for diff, stats in difficulty_stats.items():
+            if stats['total'] >= 3:
+                acc = stats['correct'] / stats['total']
+                if acc < 0.6:
+                    weaknesses.append(f"Kỹ năng {diff_map.get(diff, diff)} (Chính xác {int(acc*100)}%)")
+                    
+        return Response({
+            "timeline": timeline,
+            "weaknesses": weaknesses,
+            "student_name": getattr(student, 'full_name', '') or student.username,
+            "total_completed": attempts.count()
+        })

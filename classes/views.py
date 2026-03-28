@@ -7,6 +7,7 @@ from django.views.decorators.vary import vary_on_headers
 
 from .models import Class, ClassStudent, Subject
 from .serializers import ClassSerializer, SubjectSerializer
+from accounts.models import User
 
 
 def _is_admin(user):
@@ -146,3 +147,78 @@ class JoinClassView(APIView):
             'class_id': str(classroom.id),
             'class_name': classroom.name
         })
+
+
+class ClassStudentAddView(APIView):
+    """Teacher adds a student by username or email."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            classroom = Class.objects.get(pk=pk)
+        except Class.DoesNotExist:
+            return Response({'detail': 'Lớp không tồn tại.'}, status=status.HTTP_404_NOT_FOUND)
+
+        role_name = getattr(request.user.role, 'name', None)
+        is_class_teacher = (role_name == 'teacher' and classroom.teacher == request.user)
+
+        if not (_is_admin(request.user) or is_class_teacher):
+            return Response(
+                {'detail': 'Bạn không có quyền thêm học sinh vào lớp này.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        identifier = request.data.get('identifier')
+        if not identifier:
+            return Response({'detail': 'Vui lòng cung cấp username hoặc email của học sinh.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Try to find user by email first, then username
+        student = User.objects.filter(email=identifier).first()
+        if not student:
+            student = User.objects.filter(username=identifier).first()
+
+        if not student:
+            return Response({'detail': 'Không tìm thấy học sinh với thông tin này.'}, status=status.HTTP_404_NOT_FOUND)
+
+        student_role = getattr(student.role, 'name', None)
+        if student_role != 'student':
+            return Response({'detail': 'Người dùng này không phải là học sinh.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if ClassStudent.objects.filter(classroom=classroom, student=student).exists():
+            return Response({'detail': 'Học sinh đã có trong lớp.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        ClassStudent.objects.create(classroom=classroom, student=student)
+        return Response({
+            'detail': 'Đã thêm học sinh vào lớp thành công.',
+            'student_id': str(student.id),
+            'username': student.username,
+            'full_name': student.full_name
+        }, status=status.HTTP_201_CREATED)
+
+
+class ClassStudentRemoveView(APIView):
+    """Teacher removes a student from the class using student's id."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, pk, student_id):
+        try:
+            classroom = Class.objects.get(pk=pk)
+        except Class.DoesNotExist:
+            return Response({'detail': 'Lớp không tồn tại.'}, status=status.HTTP_404_NOT_FOUND)
+
+        role_name = getattr(request.user.role, 'name', None)
+        is_class_teacher = (role_name == 'teacher' and classroom.teacher == request.user)
+
+        if not (_is_admin(request.user) or is_class_teacher):
+            return Response(
+                {'detail': 'Bạn không có quyền xoá học sinh khỏi lớp này.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        try:
+            membership = ClassStudent.objects.get(classroom=classroom, student_id=student_id)
+            membership.delete()
+            return Response({'detail': 'Đã xoá học sinh khỏi lớp.'}, status=status.HTTP_204_NO_CONTENT)
+        except ClassStudent.DoesNotExist:
+            return Response({'detail': 'Học sinh không có trong lớp này.'}, status=status.HTTP_404_NOT_FOUND)
+

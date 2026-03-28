@@ -168,3 +168,33 @@ class ExamsApiTests(APITestCase):
 		self.assertEqual(res.data['text'], 'Noi dung tu block')
 		self.assertEqual(len(res.data['options']), 2)
 		self.assertEqual(res.data['options'][0]['text'], 'PA A')
+
+	def test_teacher_progress_endpoint_for_teacher_and_admin(self):
+		# create completed attempts for current quiz
+		QuizAttempt.objects.create(quiz=self.quiz, student=self.student, score=8.0, is_completed=True)
+		QuizAttempt.objects.create(quiz=self.quiz, student=self.student, score=9.5, is_completed=True)
+
+		# teacher should see data
+		self._auth('teacher_exam', 'TeacherPass123')
+		res = self.client.get('/api/exams/teacher-progress/')
+		self.assertEqual(res.status_code, status.HTTP_200_OK)
+		self.assertIn('quizzes', res.data)
+		self.assertEqual(len(res.data['quizzes']), 1)
+		quiz_data = res.data['quizzes'][0]
+		self.assertEqual(quiz_data['quiz_title'], self.quiz.title)
+		self.assertAlmostEqual(quiz_data['average_score'], 8.75, places=2)
+		self.assertEqual(quiz_data['total_attempts'], 2)
+
+		# create admin user and check visibility for admin too
+		admin_role, _ = Role.objects.get_or_create(name=Role.ADMIN)
+		admin = User.objects.create_user(username='admin_exam', email='admin_exam@example.com', password='AdminPass123', role=admin_role, is_superuser=True)
+		self._auth('admin_exam', 'AdminPass123')
+		res_admin = self.client.get('/api/exams/teacher-progress/')
+		self.assertEqual(res_admin.status_code, status.HTTP_200_OK)
+		self.assertEqual(len(res_admin.data['quizzes']), 1)
+
+	def test_teacher_progress_endpoint_forbidden_for_student(self):
+		self._auth('student_exam', 'StudentPass123')
+		res = self.client.get('/api/exams/teacher-progress/')
+		self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+

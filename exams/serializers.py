@@ -252,13 +252,14 @@ class QuizSerializer(serializers.ModelSerializer):
     subject_id = serializers.IntegerField(source='classroom.subject.id', read_only=True)
     question_count = serializers.SerializerMethodField()
     my_attempt = serializers.SerializerMethodField()
+    average_score = serializers.SerializerMethodField()
 
     class Meta:
         model = Quiz
         fields = [
             'id', 'title', 'description', 'classroom', 'classroom_name',
             'subject_name', 'subject_id', 'duration_minutes', 'is_published', 'publish_at',
-            'created_at', 'due_date', 'question_count', 'my_attempt',
+            'created_at', 'due_date', 'question_count', 'my_attempt', 'average_score'
         ]
 
     def get_question_count(self, obj):
@@ -277,6 +278,13 @@ class QuizSerializer(serializers.ModelSerializer):
                 'start_time': attempt.start_time,
             }
         return None
+
+    def get_average_score(self, obj):
+        if not obj.is_published:
+            return None
+        from django.db.models import Avg
+        stats = QuizAttempt.objects.filter(quiz=obj, is_completed=True).aggregate(avg_score=Avg('score'))
+        return round(stats['avg_score'], 2) if stats['avg_score'] is not None else 0
 
 
 class QuizAttemptSerializer(serializers.ModelSerializer):

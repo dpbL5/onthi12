@@ -668,3 +668,94 @@ class AIBulkSaveQuestionsView(APIView):
         if not isinstance(blocks, list):
             return False
         return any(isinstance(b, dict) and b.get('type') == 'image' for b in blocks)
+
+# ─── MẢNG 3: AI CÁ NHÂN HÓA ─────────────────────────────────────────────────
+
+class AIPersonalizedPathView(APIView):
+    """Đề xuất lộ trình học tập cá nhân hóa dựa trên kết quả các bài quiz."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        
+        from exams.models import QuizAttempt, StudentAnswer
+        attempts = QuizAttempt.objects.filter(student=user, is_completed=True).select_related('quiz')
+        
+        if not attempts.exists():
+            return Response({"insight": "Bạn chưa hoàn thành bài thi nào để AI có thể phân tích lộ trình học tập. Hãy hoàn thành ít nhất 1 bài thi."})
+            
+        subject_stats = {}
+        answers = StudentAnswer.objects.filter(attempt__in=attempts).select_related('quiz_question__question', 'quiz_question__question__subject')
+        for ans in answers:
+            q = ans.quiz_question.question
+            subj = q.subject.name if q.subject else "Chung"
+            is_corr = ans.is_correct()
+            
+            if subj not in subject_stats:
+                subject_stats[subj] = {'total': 0, 'correct': 0}
+            subject_stats[subj]['total'] += 1
+            if is_corr:
+                subject_stats[subj]['correct'] += 1
+                
+        prompt = f"""
+Bạn là một gia sư AI tận tâm. Dựa trên dữ liệu dưới đây, hãy đề xuất một lộ trình học tập ngắn gọn, tập trung vào môn học có độ chính xác dưới 60%.
+Dữ liệu học tập (Môn: Số câu đúng / Tổng số câu):
+{json.dumps(subject_stats, ensure_ascii=False)}
+
+YÊU CẦU BÁO CÁO:
+1. Nhận xét ngắn gọn, khích lệ.
+2. Đề xuất 2-3 bước hành động cụ thể.
+3. Sử dụng Markdown (Heading, in đậm).
+"""
+        try:
+            response = ai_client.generate_content(prompt)
+            return Response({"insight": response.text})
+        except Exception:
+            return Response({"error": "Lỗi kết nối AI."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class AIGenerateQuickTestView(APIView):
+    """Tạo nhanh 1 bài quiz ngẫu nhiên tập trung vào điểm yếu."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        try:
+            from exams.models import Question, Quiz, QuizQuestion
+            import random
+            from django.utils import timezone
+            
+            # Logic: Collect questions the student got wrong recently
+            from exams.models import StudentAnswer
+            wrong_answers = StudentAnswer.objects.filter(attempt__student=user, attempt__is_completed=True).order_by('-id')[:50]
+            wrong_questions = [ans.quiz_question.question for ans in wrong_answers if not ans.is_correct()]
+            
+            pool = list(set(wrong_questions))
+            if len(pool) < 5:
+                # Not enough wrong questions, pad with some random questions from DB
+                pool.extend(list(Question.objects.all().order_by('?')[:10]))
+                pool = list(set(pool))
+                
+            if not pool:
+                return Response({"error": "Không có đủ câu hỏi trong ngân hàng để tạo Quick Test."}, status=status.HTTP_400_BAD_REQUEST)
+                
+            selected = random.sample(pool, min(10, len(pool)))
+            
+            quiz = Quiz.objects.create(
+                title=f"Phục thù - Luyện tập thần tốc ngày {timezone.now().strftime('%d/%m')}",
+                description="Bài kiểm tra tự động tạo ra từ phân tích điểm yếu của bạn, tập trung vào các câu bạn đã làm sai.",
+                duration_minutes=len(selected) * 2,
+                is_published=True
+            )
+            
+            for idx, q in enumerate(selected):
+                QuizQuestion.objects.create(
+                    quiz=quiz,
+                    question=q,
+                    order=idx + 1,
+                    points=round(10.0 / len(selected), 2)
+                )
+                
+            return Response({"quiz_id": quiz.id, "message": "Quick Test đã sẵn sàng!"})
+            
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

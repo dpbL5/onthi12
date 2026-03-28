@@ -5,7 +5,7 @@ from .views import (
     QuizQuestionDetailView, UploadImageView,
     QuestionImageUploadView, QuestionImageLinkView, QuestionImageUnlinkView,
     StudentQuizListView, QuizStartView, QuizSubmitView, ClassAnalyticsView,
-    BulkDeleteQuestionsView
+    BulkDeleteQuestionsView, StudentProgressAPIView, TeacherAdminProgressAPIView
 )
 
 urlpatterns = [
@@ -26,8 +26,8 @@ urlpatterns = [
     path('analytics/<uuid:class_id>/', ClassAnalyticsView.as_view(), name='class-analytics'),
     path('<int:quiz_id>/questions/', QuizQuestionListCreateView.as_view(), name='quiz-question-list-create'),
     path('<int:quiz_id>/questions/<int:pk>/', QuizQuestionDetailView.as_view(), name='quiz-question-detail'),
-
-
+    path('teacher-progress/', TeacherAdminProgressAPIView.as_view(), name='teacher-progress'),
+    path('student-progress/', StudentProgressAPIView.as_view(), name='student-progress'),
 
 
     # Student: Take Exams

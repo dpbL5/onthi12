@@ -2,7 +2,8 @@ from django.urls import path
 from .views import (
     RAGChatbotView, AIClassInsightView, 
     ClassDocumentListView, UploadClassDocumentView, DeleteClassDocumentView,
-    AIExtractFromFileView, AIGenerateFromRAGView, AIBulkSaveQuestionsView
+    AIExtractFromFileView, AIGenerateFromRAGView, AIBulkSaveQuestionsView,
+    AIPersonalizedPathView, AIGenerateQuickTestView
 )
 
 urlpatterns = [
@@ -15,4 +16,8 @@ urlpatterns = [
     path('generate/extract-file/', AIExtractFromFileView.as_view(), name='ai-extract-file'),
     path('generate/from-rag/', AIGenerateFromRAGView.as_view(), name='ai-generate-rag'),
     path('generate/save-bulk/', AIBulkSaveQuestionsView.as_view(), name='ai-save-bulk'),
+    
+    # Path & Quick Test AI 
+    path('path/', AIPersonalizedPathView.as_view(), name='ai-personalized-path'),
+    path('quick-test/', AIGenerateQuickTestView.as_view(), name='ai-quick-test'),
 ]
