@@ -208,6 +208,9 @@ function showResult(data) {
     document.getElementById('resultState').style.display = 'block';
     document.getElementById('finalScore').textContent = parseFloat(data.score).toFixed(1);
 
+    // Save data for AI Explanation
+    window.quizResultData = { questions: data.questions, answers: data.answers };
+
     // Compute stats
     if (data.questions && data.answers) {
         var totalQ = data.questions.length;
@@ -326,6 +329,19 @@ function renderReview(questions, answers) {
         if (q.explanation) {
             explanationHtml = '<div class="mt-2 p-2 bg-light rounded small text-muted"><strong>Giải thích:</strong> ' + q.explanation + '</div>';
         }
+        
+        var isOverallCorrect = false;
+        if (qType === 'multiple_choice' || qType === 'short_answer') {
+            isOverallCorrect = studentAns[0] ? studentAns[0].is_correct : false;
+        } else if (qType === 'true_false') {
+            isOverallCorrect = studentAns.length === 4 && studentAns.every(function(a){return a.is_correct;});
+        }
+        
+        var aiBtnHtml = '';
+        if (!isOverallCorrect) {
+            aiBtnHtml = '<div class="mt-2"><button id="btn_ai_explain_' + qq.id + '" class="btn btn-sm btn-outline-info" onclick="explainWithAI(' + qq.id + ')"><i class="bi bi-robot me-1"></i>AI Giải thích</button></div>'
+                      + '<div id="ai_explain_' + qq.id + '" class="mt-2 text-wrap"></div>';
+        }
 
         return '<div class="review-q-item">'
             + '<div class="d-flex align-items-center gap-2 mb-2">'
@@ -335,8 +351,94 @@ function renderReview(questions, answers) {
             + '<div class="mb-3" style="font-size:0.9rem;">' + stemHtml + '</div>'
             + '<div>' + reviewHtml + '</div>'
             + explanationHtml
+            + aiBtnHtml
             + '</div>';
     }).join('');
 }
+
+window.explainWithAI = async function(qqId) {
+    var btn = document.getElementById('btn_ai_explain_' + qqId);
+    var box = document.getElementById('ai_explain_' + qqId);
+    if (!btn || !box) return;
+    
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> AI đang suy nghĩ...';
+    box.innerHTML = '';
+    
+    var qq = window.quizResultData.questions.find(function(q) { return q.id === qqId; });
+    var q = qq.question;
+    var studentAns = window.quizResultData.answers.filter(function(a) { return a.quiz_question === qqId; });
+    
+    var qText = q.question_text || '';
+    if (q.context) qText += '\nNgữ cảnh: ' + q.context;
+    
+    var stemText = (q.content_json || []).filter(function(b) { return b.type==='text'; }).map(function(b) { return b.value; }).join(' ');
+    qText += '\nCâu hỏi: ' + stemText;
+    
+    var correctText = '';
+    var studentText = '';
+    
+    if (q.question_type === 'multiple_choice') {
+        var keys = ['A','B','C','D'];
+        q.options.forEach(function(opt, oi) {
+            var optText = (opt.content_json || []).filter(function(b){return b.type==='text'}).map(function(b){return b.value}).join(' ');
+            qText += '\n' + keys[oi] + '. ' + optText;
+            if (opt.is_correct) correctText = keys[oi] + '. ' + optText;
+            
+            var isStudent = studentAns[0] && studentAns[0].selected_option === opt.id;
+            if (isStudent) studentText = keys[oi] + '. ' + optText;
+        });
+        if (!studentText) studentText = '(Bỏ trống)';
+    } else if (q.question_type === 'true_false') {
+        q.options.forEach(function(opt, i) {
+            var optText = (opt.content_json || []).filter(function(b){return b.type==='text'}).map(function(b){return b.value}).join(' ');
+            qText += '\n' + String.fromCharCode(97+i) + ') ' + optText;
+            correctText += String.fromCharCode(97+i) + ') ' + optText + ' -> ' + (opt.is_correct ? 'Đúng' : 'Sai') + '\n';
+            
+            var ans = studentAns.find(function(a){return a.selected_option === opt.id;});
+            if (ans) {
+                var studentChoseCorrect = (ans.is_correct === opt.is_correct) ? opt.is_correct : !opt.is_correct;
+                studentText += String.fromCharCode(97+i) + ') ' + optText + ' -> ' + (studentChoseCorrect ? 'Đúng' : 'Sai') + '\n';
+            } else {
+                studentText += String.fromCharCode(97+i) + ') (Bỏ trống)\n';
+            }
+        });
+    } else if (q.question_type === 'short_answer') {
+        correctText = q.correct_answer_text || '';
+        studentText = studentAns[0] ? studentAns[0].answer_text : '(Bỏ trống)';
+    }
+
+    try {
+        var res = await fetch('/api/ai/explain-wrong-answer/', {
+            method: 'POST',
+            headers: authHeaders(),
+            body: JSON.stringify({
+                question_text: qText,
+                correct_answer: correctText,
+                student_answer: studentText
+            })
+        });
+        var data = await res.json();
+        if (res.ok) {
+            var formattedInsight = escapeHtml(data.explanation) || "";
+            formattedInsight = formattedInsight.replace(/\n/g, '<br>');
+            formattedInsight = formattedInsight.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            
+            box.innerHTML = '<div class="p-3 bg-info-subtle text-info-emphasis rounded mt-2" style="border-left: 4px solid var(--bs-info);"><h6 class="fw-bold mb-2"><i class="bi bi-robot me-1"></i>AI Giải thích:</h6><div class="small">' + formattedInsight + '</div></div>';
+            btn.style.display = 'none';
+            if (window.MathJax && window.MathJax.typesetPromise) {
+                window.MathJax.typesetPromise([box]).catch(function(err) { console.warn('MathJax error:', err); });
+            }
+        } else {
+            box.innerHTML = '<div class="text-danger small mt-2">' + escapeHtml(data.error || 'Lỗi lấy giải thích từ AI') + '</div>';
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-robot me-1"></i>Thử lại';
+        }
+    } catch(e) {
+        box.innerHTML = '<div class="text-danger small mt-2">Lỗi kết nối mạng.</div>';
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-robot me-1"></i>Thử lại';
+    }
+};
 
 init();

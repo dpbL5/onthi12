@@ -3,7 +3,8 @@ from .views import (
     RAGChatbotView, AIClassInsightView, 
     ClassDocumentListView, UploadClassDocumentView, DeleteClassDocumentView,
     AIExtractFromFileView, AIGenerateFromRAGView, AIBulkSaveQuestionsView,
-    AIPersonalizedPathView, AIGenerateQuickTestView
+    AIPersonalizedPathView, AIGenerateQuickTestView,
+    AIExplainWrongAnswerView
 )
 
 urlpatterns = [
@@ -20,4 +21,7 @@ urlpatterns = [
     # Path & Quick Test AI 
     path('path/', AIPersonalizedPathView.as_view(), name='ai-personalized-path'),
     path('quick-test/', AIGenerateQuickTestView.as_view(), name='ai-quick-test'),
+    
+    # Explain wrong answer
+    path('explain-wrong-answer/', AIExplainWrongAnswerView.as_view(), name='ai-explain-wrong-answer'),
 ]

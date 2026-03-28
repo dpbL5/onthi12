@@ -10,15 +10,48 @@ document.addEventListener('DOMContentLoaded', () => {
     async function initDashboard() {
         try {
             const user = await window.getCurrentUser();
+            if (!user) {
+                // Token không hợp lệ → cần đăng nhập lại
+                localStorage.clear();
+                window.location.href = '/login/';
+                return;
+            }
+
             const statsRes = await fetch('/api/accounts/stats/', { headers: authH() });
-            
-            if (!user) throw new Error('Auth failed');
+
+            if (statsRes.status === 401) {
+                // Token hết hạn
+                localStorage.clear();
+                window.location.href = '/login/';
+                return;
+            }
+
+            if (!statsRes.ok) {
+                // Lỗi server (500, 403...) → hiển thị thông báo lỗi thay vì loop redirect
+                console.error('Stats API lỗi:', statsRes.status);
+                showDashboardError('Không thể tải dữ liệu từ máy chủ (lỗi ' + statsRes.status + '). Vui lòng thử tải lại trang.');
+                return;
+            }
+
             const data = await statsRes.json();
             renderDashboard(user, data);
         } catch (e) {
-            console.error(e);
-            localStorage.clear();
-            window.location.href = '/login/';
+            console.error('initDashboard error:', e);
+            showDashboardError('Đã xảy ra lỗi kết nối. Vui lòng kiểm tra mạng và tải lại trang.');
+        }
+    }
+
+    function showDashboardError(msg) {
+        const placeholder = document.getElementById('loadingPlaceholder');
+        if (placeholder) {
+            placeholder.innerHTML = `
+                <div class="py-5 text-center">
+                    <div style="font-size:3rem;">⚠️</div>
+                    <p class="mt-3 text-danger fw-medium">${msg}</p>
+                    <button class="btn btn-outline-primary btn-sm mt-2" onclick="window.location.reload()">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Tải lại trang
+                    </button>
+                </div>`;
         }
     }
     
@@ -319,8 +352,27 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if(!res.ok) throw new Error(data.error || 'Lỗi hệ thống');
             
-            // Render markdown to HTML (basic implementation or use a library if available, assuming plain text with basic formatting for now)
-            body.innerHTML = `<div class="p-3" style="line-height: 1.6;">${data.insight.replace(/\\n/g, '<br>').replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>').replace(/### (.*?)\\n/g, '<h5>$1</h5>')}</div>`;
+            let rawInsight = data.insight || "";
+            // Unescape newline if server sent literal string \\n
+            if (rawInsight.includes('\\n')) {
+                rawInsight = rawInsight.replace(/\\n/g, '\n');
+            }
+            
+            let formattedInsight = rawInsight;
+            if (typeof marked !== 'undefined') {
+                formattedInsight = marked.parse(rawInsight);
+            } else {
+                // Fallback basic parse if marked is missing
+                formattedInsight = rawInsight
+                    .replace(/\n/g, '<br>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/### (.*?)(?:<br>|\n|$)/g, '<h5>$1</h5>');
+            }
+
+            body.innerHTML = `<div class="p-3 ai-markdown-content" style="line-height: 1.6;">${formattedInsight}</div>`;
+            if (window.MathJax && window.MathJax.typesetPromise) {
+                window.MathJax.typesetPromise([body]).catch(err => console.warn('MathJax error:', err));
+            }
         } catch (e) {
             body.innerHTML = `<div class="alert alert-danger m-3"><i class="bi bi-exclamation-triangle-fill me-2"></i> ${e.message}</div>`;
         }
@@ -339,7 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if(!res.ok) throw new Error(data.error || 'Thất bại');
             
             alert(data.message);
-            window.location.href = `/exams/${data.quiz_id}/start/`;
+            window.location.href = `/exams/taker/${data.quiz_id}/`;
         } catch (e) {
             alert('Lỗi: ' + e.message);
         }

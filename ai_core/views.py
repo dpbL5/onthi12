@@ -697,15 +697,27 @@ class AIPersonalizedPathView(APIView):
             if is_corr:
                 subject_stats[subj]['correct'] += 1
                 
+        # Lấy thông tin lớp học của học sinh để AI hiểu rõ ngữ cảnh cấp học
+        class_context = ""
+        try:
+            from classes.models import ClassStudent
+            enrolled = ClassStudent.objects.filter(student=user).select_related('classroom')
+            class_names = [e.classroom.name for e in enrolled if e.classroom]
+            if class_names:
+                class_context = f"\nThông tin đối tượng: Học sinh đang học tại các lớp [{', '.join(class_names)}]. Hãy điều chỉnh phương pháp học, thuật ngữ và lời khuyên sao cho bám sát chương trình và trình độ của học sinh lớp này."
+        except Exception:
+            pass
+
         prompt = f"""
-Bạn là một gia sư AI tận tâm. Dựa trên dữ liệu dưới đây, hãy đề xuất một lộ trình học tập ngắn gọn, tập trung vào môn học có độ chính xác dưới 60%.
+Bạn là một gia sư AI tận tâm. Dựa trên dữ liệu dưới đây, hãy đề xuất một lộ trình học tập tập trung vào môn học có độ chính xác dưới 60%.{class_context}
+
 Dữ liệu học tập (Môn: Số câu đúng / Tổng số câu):
 {json.dumps(subject_stats, ensure_ascii=False)}
 
 YÊU CẦU BÁO CÁO:
-1. Nhận xét ngắn gọn, khích lệ.
-2. Đề xuất 2-3 bước hành động cụ thể.
-3. Sử dụng Markdown (Heading, in đậm).
+1. Đưa ra nhận xét ngắn gọn, khích lệ người học.
+2. Đề xuất 2-3 bước hành động cụ thể để khắc phục điểm yếu.
+3. TRÌNH BÀY BẰNG MARKDOWN: Sử dụng CÁC THẺ HEADING (#, ##) và BẮT BUỘC PHẢI XUỐNG DÒNG (line break) rõ ràng giữa các đoạn văn, các heading và các mục danh sách để dễ đọc. Tuyệt đối không viết liền tù tì thành một đoạn văn duy nhất.
 """
         try:
             response = ai_client.generate_content(prompt)
@@ -728,6 +740,45 @@ class AIGenerateQuickTestView(APIView):
             from exams.models import StudentAnswer
             wrong_answers = StudentAnswer.objects.filter(attempt__student=user, attempt__is_completed=True).order_by('-id')[:50]
             wrong_questions = [ans.quiz_question.question for ans in wrong_answers if not ans.is_correct()]
+
+            target_class = None
+            if wrong_answers.exists():
+                target_class = wrong_answers[0].attempt.quiz.classroom
+            
+            if not target_class:
+                from classes.models import ClassStudent
+                cs = ClassStudent.objects.filter(student=user).first()
+                if cs:
+                    target_class = cs.classroom
+                    
+            if not target_class:
+                return Response({"error": "Bạn cần tham gia ít nhất 1 lớp học để tạo bài ôn tập."}, status=status.HTTP_400_BAD_REQUEST)
+
+            target_class = None
+            if wrong_answers.exists():
+                target_class = wrong_answers[0].attempt.quiz.classroom
+            
+            if not target_class:
+                from classes.models import ClassStudent
+                cs = ClassStudent.objects.filter(student=user).first()
+                if cs:
+                    target_class = cs.classroom
+                    
+            if not target_class:
+                return Response({"error": "Bạn cần tham gia ít nhất 1 lớp học để tạo bài ôn tập."}, status=status.HTTP_400_BAD_REQUEST)
+
+            target_class = None
+            if wrong_answers.exists():
+                target_class = wrong_answers[0].attempt.quiz.classroom
+            
+            if not target_class:
+                from classes.models import ClassStudent
+                cs = ClassStudent.objects.filter(student=user).first()
+                if cs:
+                    target_class = cs.classroom
+                    
+            if not target_class:
+                return Response({"error": "Bạn cần tham gia ít nhất 1 lớp học để tạo bài ôn tập."}, status=status.HTTP_400_BAD_REQUEST)
             
             pool = list(set(wrong_questions))
             if len(pool) < 5:
@@ -744,6 +795,8 @@ class AIGenerateQuickTestView(APIView):
                 title=f"Phục thù - Luyện tập thần tốc ngày {timezone.now().strftime('%d/%m')}",
                 description="Bài kiểm tra tự động tạo ra từ phân tích điểm yếu của bạn, tập trung vào các câu bạn đã làm sai.",
                 duration_minutes=len(selected) * 2,
+                classroom=target_class,
+                created_by=user,
                 is_published=True
             )
             
@@ -759,3 +812,28 @@ class AIGenerateQuickTestView(APIView):
             
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class AIExplainWrongAnswerView(APIView):
+    """API cho php h?c sinh g?i AI d? gi?i thch cu h?i lm sai trn k?t qu? bi thi."""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        if getattr(request.user.role, 'name', None) not in ['student', 'teacher', 'admin'] and not request.user.is_superuser:
+            return Response({"error": "B?n khng c quy?n th?c hi?n ch?c nang ny."}, status=status.HTTP_403_FORBIDDEN)
+            
+        question_text = request.data.get('question_text')
+        correct_answer = request.data.get('correct_answer')
+        student_answer = request.data.get('student_answer')
+        
+        if not all([question_text, correct_answer, student_answer]):
+            return Response({"error": "Vui lng cung c?p d? thng tin cu h?i, dp n dng v dp n d ch?n."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            explanation = AIGeneratorService.explain_wrong_answer(
+                question_text=str(question_text)[:2000],
+                correct_answer=str(correct_answer)[:500],
+                student_answer=str(student_answer)[:500]
+            )
+            return Response({"explanation": explanation})
+        except Exception as e:
+            return Response({"error": f"L?i AI: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

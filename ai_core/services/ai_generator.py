@@ -16,6 +16,8 @@ from .ai_provider import get_client
 ai_client = get_client()
 RAG_GENERATION_MODEL = os.environ.get('AI_MODEL_NAME', ai_client.get_default_model())
 FILE_EXTRACTION_MODEL = os.environ.get('AI_EXTRACTION_MODEL_NAME', ai_client.get_default_model())
+AI_TUTOR_MODEL = os.environ.get('AI_TUTOR_MODEL_NAME', ai_client.get_default_model())
+
 
 # Cấu hình generation ưu tiên output JSON ổn định và giảm biến thiên.
 GENERATION_CONFIG_JSON_STRICT = {
@@ -134,6 +136,23 @@ Trả về một JSON array, mỗi object bao gồm các trường:
 
 TÀI LIỆU TRÍCH XUẤT (SOURCE):
 {context}
+
+VÍ DỤ TRÍCH XUẤT JSON CHO CÂU HỎI ĐÚNG SAI:
+[
+  {{
+    "question_type": "true_false",
+    "question_text": "Về mạng máy tính",
+    "context": "Internet là một liên mạng máy tính rộng lớn...",
+    "text": "Sau đây là các nhận định về mạng máy tính như sau:",
+    "difficulty": "{difficulty}",
+    "topic": "{topic}",
+    "subject": "{subject}",
+    "options": [
+      {{"text": "Internet là mạng LAN.", "is_correct": false}},
+      {{"text": "Internet cho phép trao đổi dữ liệu toàn cầu.", "is_correct": true}}
+    ]
+  }}
+]
 
 YÊU CẦU: Trả về DUY NHẤT một JSON array. Không được tự bịa kiến thức ngoài tài liệu.
 """
@@ -861,11 +880,11 @@ class AIGeneratorService:
         # 3. Dynamic Prompt refinement based on question_types
         type_instructions = ""
         if question_types == 'multiple_choice':
-            type_instructions = "CHỈ tạo duy nhất loại: 1. multiple_choice (PHẦN I)."
+            type_instructions = "CHỈ tạo duy nhất loại: 1. multiple_choice (PHẦN I - Trắc nghiệm 4 lựa chọn). Mỗi JSON object PHẢI có \"question_type\": \"multiple_choice\"."
         elif question_types == 'true_false':
-            type_instructions = "CHỈ tạo duy nhất loại: 2. true_false (PHẦN II)."
+            type_instructions = "CHỈ tạo duy nhất loại: 2. true_false (PHẦN II - Trắc nghiệm Đúng/Sai). ĐẶC BIỆT LƯU Ý: Rất nhiều lúc bạn tạo sai dạng này!! \n1 câu True/False gồm 1 VẤN ĐỀ CHUNG và ĐÚNG 4 CÂU PHÁT BIỂU (A, B, C, D) năm trong mảng `options`! \nKHÔNG THỂ hiện từng phát biểu thành 1 câu hỏi độc lập. PHẢI gộp 4 phát biểu vào chung 1 JSON object duy nhất (có \"question_type\": \"true_false\")."
         elif question_types == 'short_answer':
-            type_instructions = "CHỈ tạo duy nhất loại: 3. short_answer (PHẦN III)."
+            type_instructions = "CHỈ tạo duy nhất loại: 3. short_answer (PHẦN III - Câu hỏi trả lời ngắn). Mỗi JSON object PHẢI có \"question_type\": \"short_answer\"."
         else:
             type_instructions = "Bạn có thể tạo hỗn hợp cả 3 loại: multiple_choice, true_false, và short_answer nếu thấy phù hợp."
 
@@ -920,3 +939,45 @@ class AIGeneratorService:
         prompt = f"Bạn là AI Trợ Giảng của NVH Learning. Trả lời dựa trên ngữ cảnh này:\n{context}\n\nHọc sinh hỏi: {question}"
         resp = ai_client.generate_content(prompt, model=RAG_GENERATION_MODEL)
         return resp.text
+
+    @classmethod
+    def explain_wrong_answer(cls, question_text: str, correct_answer: str, student_answer: str) -> str:
+        """Sử dụng AI để giải thích ngắn gọn nguyên nhân học sinh chọn sai và tại sao đáp án kia lại đúng."""
+        # 1. Tạo cache key dựa trên hash của câu hỏi và câu trả lời
+        hash_str = f"{question_text}|{correct_answer}|{student_answer}".encode('utf-8')
+        cache_key = f"ai_explain_{hashlib.md5(hash_str).hexdigest()}"
+        
+        # 2. Kiểm tra cache
+        cached_explanation = cache.get(cache_key)
+        if cached_explanation:
+            return cached_explanation
+            
+        # 3. Prompt yêu cầu AI giải thích
+        prompt = f"""
+Bạn là một gia sư AI thân thiện của NVH Learning. Học sinh vừa làm sai một câu hỏi.
+Nhiệm vụ: Giải thích giúp học sinh hiểu ĐÁP ÁN ĐÚNG và vì sao ĐÁP ÁN CỦA HỌC SINH lại sai, hoặc cung cấp bổ sung kiến thức cần thiết.
+
+Câu hỏi:
+{question_text}
+
+Đáp án ĐÚNG:
+{correct_answer}
+
+Đáp án học sinh đã chọn (SAI):
+{student_answer}
+
+YÊU CẦU QUAN TRỌNG: 
+- Bạn được phép dùng kiến thức nền (Open Knowledge) để giải thích chi tiết hơn.
+- KHÔNG giải thích quá dài dòng. Tối đa 150 từ.
+- Trình bày dạng văn bản bình thường (hoặc markdown nhẹ nhàng), giọng điệu khích lệ.
+"""
+        try:
+            resp = ai_client.generate_content(prompt, model=AI_TUTOR_MODEL)
+            explanation = resp.text.strip()
+            
+            # Lưu vào redis cache, hết hạn sau 24 giờ (86400s)
+            cache.set(cache_key, explanation, timeout=86400)
+            return explanation
+        except Exception as e:
+            print(f"Error explaining wrong answer: {e}")
+            return "Rất tiếc, AI không giải thích được câu này vào lúc này. Vui lòng thử lại sau."
