@@ -25,6 +25,7 @@ urlpatterns = [
     path('api/accounts/', include('accounts.urls')),
     path('api/classes/', include('classes.urls')),
     path('api/exams/', include('exams.urls')),
+    path('api/notifications/', include('notifications.urls')),
     path('api/ai/', include('ai_core.urls')),
     # Frontend views
     path('', core_views.home_view, name='home'),
@@ -38,6 +39,7 @@ urlpatterns = [
     path('exams/question-bank/', core_views.question_bank_view, name='question-bank'),
     path('admin-panel/', core_views.admin_panel_view, name='admin-panel'),
     path('logout/', core_views.logout_view, name='logout'),
+    path('notifications/', core_views.notifications_view, name='notifications'),
 ]
 
 if settings.DEBUG:

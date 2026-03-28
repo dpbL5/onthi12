@@ -73,6 +73,15 @@ window.updateNavbarUI = function(user) {
     navAuthLinks.innerHTML = `
         ${navLinks.map(l => `<a href="${l.href}" class="nav-btn nav-btn-solid"><i class="bi ${l.icon}"></i> ${l.label}</a>`).join('')}
         <div class="nav-divider"></div>
+        
+        <!-- Bell Icon -->
+        <button id="navBellBtn" class="nav-btn position-relative" style="background:transparent; border:none; color:#fff; font-size:1.25rem; padding:0 0.5rem;">
+            <i class="bi bi-bell-fill"></i>
+            <span id="navBellBadge" class="position-absolute translate-middle badge rounded-pill bg-danger" 
+                  style="top:8px; right:-12px; font-size:0.6rem; display:none; padding:0.25em 0.5em;">0</span>
+        </button>
+        <div class="nav-divider"></div>
+
         <div class="d-flex align-items-center gap-2 px-2">
             <div style="width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;color:#fff;">
                 ${initials.toUpperCase()}
@@ -95,8 +104,132 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Update navbar if logged in
     const user = await getCurrentUser();
-    if (user) updateNavbarUI(user);
+    if (user) {
+        updateNavbarUI(user);
+        setupNotificationPolling();
+    }
 });
+
+// ── Notifications (Bell & Dropdown) ───────────────────────────────────────
+
+window.refreshNotifCount = async function() {
+    const token = localStorage.getItem('access');
+    if (!token) return;
+    try {
+        const res = await fetch('/api/notifications/unread-count/', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (res.ok) {
+            const data = await res.json();
+            const badge = document.getElementById('navBellBadge');
+            if (badge) {
+                if (data.count > 0) {
+                    badge.textContent = data.count > 99 ? '99+' : data.count;
+                    badge.style.display = 'inline-block';
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
+        }
+    } catch (e) { console.error('Failed to fetch unread count', e); }
+};
+
+function setupNotificationPolling() {
+    window.refreshNotifCount();
+    setInterval(window.refreshNotifCount, 60000); // Polling every 60s
+
+    const bellBtn = document.getElementById('navBellBtn');
+    const dropdown = document.getElementById('notifDropdown');
+    if (!bellBtn || !dropdown) return;
+
+    // Toggle dropdown
+    bellBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isVisible = dropdown.style.display === 'block';
+        dropdown.style.display = isVisible ? 'none' : 'block';
+        if (!isVisible) loadNotifDropdown();
+    });
+
+    // Close on outside click
+    document.addEventListener('click', (e) => {
+        if (!dropdown.contains(e.target) && !bellBtn.contains(e.target)) {
+            dropdown.style.display = 'none';
+        }
+    });
+
+    // Mark all read button in dropdown
+    const markAllBtn = document.getElementById('notifMarkAllBtn');
+    if (markAllBtn) {
+        markAllBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const token = localStorage.getItem('access');
+            if (!token) return;
+            await fetch('/api/notifications/mark-all-read/', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            window.refreshNotifCount();
+            dropdown.style.display = 'none';
+        });
+    }
+}
+
+async function loadNotifDropdown() {
+    const list = document.getElementById('notifList');
+    if (!list) return;
+    list.innerHTML = '<div class="text-center text-muted py-4 small"><div class="spinner-border spinner-border-sm"></div></div>';
+    
+    const token = localStorage.getItem('access');
+    if (!token) return;
+    
+    try {
+        // Fetch page 1
+        const res = await fetch('/api/notifications/?page=1', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        const notifs = data.results || [];
+        
+        if (!notifs.length) {
+            list.innerHTML = '<div class="text-center text-muted py-4 small">Không có thông báo mới.</div>';
+            return;
+        }
+
+        // Show max 5 in dropdown
+        list.innerHTML = notifs.slice(0, 5).map(n => {
+            const unreadStyle = n.is_read ? '' : 'background:linear-gradient(135deg,#f0f0ff 0%,#fff 100%); border-left:3px solid var(--color-primary,#4f46e5);';
+            const url = n.quiz_url || '/notifications/';
+            
+            // relative time minimal version
+            const diff = (Date.now() - new Date(n.created_at)) / 1000;
+            let timeStr = 'vừa xong';
+            if (diff >= 86400) timeStr = `${Math.floor(diff / 86400)} ngày trước`;
+            else if (diff >= 3600) timeStr = `${Math.floor(diff / 3600)} giờ trước`;
+            else if (diff >= 60) timeStr = `${Math.floor(diff / 60)} phút trước`;
+
+            return `
+            <a href="${url}" class="text-decoration-none dropdown-notif-item" data-notif-id="${n.id}" data-is-read="${n.is_read}" style="display:block; padding:0.75rem 1rem; border-bottom:1px solid var(--color-border); ${unreadStyle}">
+                <div class="small fw-600 text-dark" style="line-height:1.3; margin-bottom:0.25rem;">${n.message}</div>
+                <div class="small text-muted" style="font-size:0.7rem;"><i class="bi bi-clock me-1"></i>${timeStr}</div>
+            </a>`;
+        }).join('');
+
+        // Attach click to mark read
+        list.querySelectorAll('.dropdown-notif-item').forEach(el => {
+            el.addEventListener('click', async (e) => {
+                const id = el.dataset.notifId;
+                const isRead = el.dataset.isRead === 'true';
+                if (!isRead) {
+                    e.preventDefault();
+                    await fetch(`/api/notifications/${id}/read/`, {
+                        method: 'PATCH',
+                        headers: { 'Authorization': 'Bearer ' + token }
+                    });
+                    window.location.href = el.getAttribute('href');
+                }
+            });
+        });
+    } catch (e) {
+        list.innerHTML = '<div class="text-center text-danger py-4 small">Lỗi tải thông báo.</div>';
+    }
+}
 
 async function doLogout() {
     const refresh = localStorage.getItem('refresh');

@@ -44,3 +44,6 @@ def question_bank_view(request):
 
 def logout_view(request):
     return redirect('/login/')
+
+def notifications_view(request):
+    return render(request, 'notifications.html')

@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'classes',
     'ai_core',
     'exams',
+    'notifications',
 ]
 
 REST_FRAMEWORK = {

@@ -58,6 +58,23 @@
 <!-- ── Global Notifications (Bottom Right) ──────────────── -->
 <div id="globalAlert" style="position:fixed; bottom:24px; right:24px; z-index:9999; display:flex; flex-direction:column-reverse; gap:10px; pointer-events:none; min-width:320px; max-width:420px;"></div>
 
+<!-- ── Notification Bell Dropdown ─────────────────────────── -->
+<div id="notifDropdown" style="display:none; position:fixed; top:62px; right:16px; z-index:9998; width:360px; max-width:calc(100vw - 32px);"
+     class="shadow-lg border rounded-3 bg-white">
+    <div class="d-flex align-items-center justify-content-between px-3 pt-3 pb-2 border-bottom">
+        <span class="fw-700 small text-uppercase" style="letter-spacing:.05em; color:var(--color-primary,#4f46e5);">Thông báo</span>
+        <button id="notifMarkAllBtn" class="btn btn-link btn-sm p-0 text-muted text-decoration-none" style="font-size:.8rem;">
+            <i class="bi bi-check2-all me-1"></i>Đọc tất cả
+        </button>
+    </div>
+    <div id="notifList" style="max-height:360px; overflow-y:auto;">
+        <div class="text-center text-muted py-4 small">Đang tải...</div>
+    </div>
+    <div class="border-top text-center py-2">
+        <a href="/notifications/" class="text-decoration-none small fw-600" style="color:var(--color-primary,#4f46e5);">Xem tất cả thông báo →</a>
+    </div>
+</div>
+
 <!-- ── Page Content ─────────────────────────────────────── -->
 {% block content %}{% endblock %}
 
