@@ -113,7 +113,7 @@ CẤU TRÚC CHI TIẾT (TUÂN THỦ TUYỆT ĐỐI):
 
 2. true_false (Trắc nghiệm Đúng/Sai):
    - `question_text`: Nội dung câu hỏi / Tiêu đề (ngắn gọn, ví dụ: "Về sự ăn mòn kim loại").
-   - `context`: Bối cảnh / Đoạn văn tình huống (5-10 dòng) mang tính thực tiễn.
+   - `context`: BẮT BUỘC là một TÌNH HUỐNG THỰC TẾ (4-8 câu) — mô tả một câu chuyện, kịch bản, hiện tượng, vấn đề đời sống hoặc thực nghiệm cụ thể liên quan đến {topic}. TUYỆT ĐỐI KHÔNG viết định nghĩa lý thuyết khô khan hay giải thích khái niệm thuần túy.
    - `text`: Câu dẫn (Stem) PHẢI theo mẫu: "Sau đây là các nhận định/nhận xét của [nguồn/tác giả] về [{topic}] như sau:".
    - PHẢI CÓ ĐÚNG SỐ LƯỢNG phát biểu (options) theo yêu cầu. Mặc định là 4 ý hỏi (a, b, c, d).
    - PHẢI TỒN TẠI ÍT NHẤT 1 phát biểu đúng (is_correct: true) và ít nhất 1 phát biểu sai.
@@ -141,15 +141,15 @@ VÍ DỤ TRÍCH XUẤT JSON CHO CÂU HỎI ĐÚNG SAI:
 [
   {{
     "question_type": "true_false",
-    "question_text": "Về mạng máy tính",
-    "context": "Internet là một liên mạng máy tính rộng lớn...",
-    "text": "Sau đây là các nhận định về mạng máy tính như sau:",
+    "question_text": "Về mạng máy tính trong nhà trường",
+    "context": "Trường THPT Nguyễn Văn Huyên vừa lắp đặt hệ thống mạng nội bộ kết nối 30 máy tính trong phòng tin học. Thầy giáo yêu cầu các học sinh chia sẻ tài liệu học tập qua mạng LAN mà không cần kết nối Internet. Một số học sinh thắc mắc về cách các máy tính nhận diện và liên lạc với nhau trong cùng một mạng.",
+    "text": "Sau đây là các nhận định của học sinh về hệ thống mạng LAN trong phòng tin học như sau:",
     "difficulty": "{difficulty}",
     "topic": "{topic}",
     "subject": "{subject}",
     "options": [
-      {{"text": "Internet là mạng LAN.", "is_correct": false}},
-      {{"text": "Internet cho phép trao đổi dữ liệu toàn cầu.", "is_correct": true}}
+      {{"text": "Các máy tính trong phòng tin học có thể chia sẻ tài liệu với nhau mà không cần Internet.", "is_correct": true}},
+      {{"text": "Hai máy tính trong cùng mạng LAN có thể dùng chung một địa chỉ IP.", "is_correct": false}}
     ]
   }}
 ]

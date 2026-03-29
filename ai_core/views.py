@@ -724,6 +724,10 @@ YÊU CẦU LỘ TRÌNH ĐỀ XUẤT:
 2. PHÂN TÍCH LỖ HỔNG: Phân tích cụ thể nội dung các câu hỏi mà học sinh làm sai ở trên. ĐƯỢC PHÉP DÙNG KIẾN THỨC BÊN NGOÀI (Open Knowledge) để suy luận xem học sinh đang bị yếu ở những dạng bài tập nào, hoặc quên mất khái niệm lý thuyết cụ thể nào.
 3. ĐỀ XUẤT LỘ TRÌNH ÔN TẬP: Ghi rõ tên các bài học, định lý, công thức, hoặc mảng kiến thức cụ thể cần ôn lại dựa trên sự phân tích trên. Không nói chung chung kiểu "hãy ôn lại môn Toán", mà phải nói cụ thể "hãy ôn lại cách tính đạo hàm hàm hợp, hay ngữ pháp câu điều kiện loại 2...".
 4. TRÌNH BÀY BẰNG MARKDOWN: Sử dụng CÁC THẺ HEADING (#, ##) và BẮT BUỘC PHẢI XUỐNG DÒNG (line break) rõ ràng giữa các đoạn văn, các heading và các mục danh sách để dễ đọc.
+
+QUAN TRỌNG - CẤM TUYỆT ĐỐI:
+- KHÔNG được thêm mục "Tài liệu tham khảo", "Sách tham khảo", "Nguồn tài liệu" hay bất kỳ danh sách sách/tài liệu cụ thể nào.
+- Học sinh có thể tự tìm tài liệu từ nhiều nguồn khác nhau. Chỉ tập trung vào nội dung kiến thức và kỹ năng cần ôn luyện.
 """
         try:
             response = ai_client.generate_content(prompt)
