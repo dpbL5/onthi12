@@ -121,15 +121,12 @@ class AIClassInsightView(APIView):
 
         try:
             insight = ClassInsight.objects.get(classroom_id=class_id)
-            days_since_update = (timezone.now() - insight.updated_at).days
-            can_generate = days_since_update >= 5
-            days_remaining = max(0, 5 - days_since_update)
             
             return Response({
                 "insight": insight.content,
                 "updated_at": insight.updated_at,
-                "can_generate": can_generate,
-                "days_remaining": days_remaining
+                "can_generate": True,
+                "days_remaining": 0
             })
         except ClassInsight.DoesNotExist:
             return Response({
@@ -148,17 +145,7 @@ class AIClassInsightView(APIView):
         if not class_id or not data:
             return Response({"error": "Thiếu class_id hoặc dữ liệu phân tích."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Kiểm tra Rate Limit 5 ngày
-        try:
-            insight = ClassInsight.objects.get(classroom_id=class_id)
-            days_since_update = (timezone.now() - insight.updated_at).days
-            if days_since_update < 5:
-                days_remaining = 5 - days_since_update
-                return Response({
-                    "error": f"Bạn chỉ có thể cập nhật Insight 5 ngày 1 lần. Vui lòng thử lại sau {days_remaining} ngày."
-                }, status=status.HTTP_429_TOO_MANY_REQUESTS)
-        except ClassInsight.DoesNotExist:
-            pass # Chưa có thì cho phép tạo
+
 
         try:
             system_prompt = f"""
@@ -191,8 +178,8 @@ BÁO CÁO:
             return Response({
                 "insight": insight.content,
                 "updated_at": insight.updated_at,
-                "can_generate": False,
-                "days_remaining": 5
+                "can_generate": True,
+                "days_remaining": 0
             })
         except Exception as e:
             return Response({"error": f"Lỗi AI Insight: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -797,6 +784,7 @@ class AIGenerateQuickTestView(APIView):
                 duration_minutes=len(selected) * 2,
                 classroom=target_class,
                 created_by=user,
+                assigned_to=user,
                 is_published=True
             )
             

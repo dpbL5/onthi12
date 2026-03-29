@@ -245,7 +245,157 @@ function showResult(data) {
 
         renderReview(data.questions, data.answers);
         document.getElementById('reviewWrapper').style.display = 'block';
+        buildKnowledgeGaps(data.questions, data.answers);
     }
+}
+
+// ─── Knowledge Gap Analysis ───────────────────────────────────────────────────
+function buildKnowledgeGaps(questions, answers) {
+    var wrapper = document.getElementById('knowledgeGapsWrapper');
+    var body = document.getElementById('knowledgeGapsBody');
+    if (!wrapper || !body) return;
+
+    // ── Collect wrong / unanswered questions ─────────────────────────────────
+    var wrongItems = []; // { q, qq, isUnanswered }
+    questions.forEach(function(qq) {
+        var q = qq.question;
+        var studentAns = answers.filter(function(a) { return a.quiz_question === qq.id; });
+        var isUnanswered = (studentAns.length === 0);
+        var isWrong = false;
+        if (isUnanswered) {
+            isWrong = true;
+        } else if (q.question_type === 'true_false') {
+            isWrong = !studentAns.every(function(a) { return a.is_correct; });
+        } else {
+            isWrong = !studentAns[0].is_correct;
+        }
+        if (isWrong) wrongItems.push({ q: q, qq: qq, isUnanswered: isUnanswered });
+    });
+
+    if (wrongItems.length === 0) {
+        wrapper.style.display = 'block';
+        body.innerHTML = '<div style="text-align:center;padding:1.5rem 0;color:var(--color-success);font-weight:700;font-size:1.05rem;"><i class="bi bi-trophy-fill me-2"></i>Xuất sắc! Bạn đã trả lời đúng tất cả câu hỏi. Không có kiến thức nào cần ôn thêm.</div>';
+        return;
+    }
+
+    // ── Group by subject ──────────────────────────────────────────────────────
+    var subjectMap = {}; // subjectName → { total, wrong, difficulties: {}, items: [] }
+    wrongItems.forEach(function(item) {
+        var subj = item.q.subject_name || 'Chung';
+        var diff = item.q.difficulty || 'easy';
+        var diffLabel = item.q.difficulty_display || diff;
+        if (!subjectMap[subj]) subjectMap[subj] = { total: 0, wrong: 0, difficulties: {}, items: [] };
+
+        // count total for this subject from all questions
+        subjectMap[subj].wrong++;
+        subjectMap[subj].items.push({ item: item, diffLabel: diffLabel, diff: diff });
+
+        if (!subjectMap[subj].difficulties[diff]) subjectMap[subj].difficulties[diff] = { label: diffLabel, count: 0 };
+        subjectMap[subj].difficulties[diff].count++;
+    });
+
+    // Count total per subject
+    questions.forEach(function(qq) {
+        var subj = (qq.question && qq.question.subject_name) ? qq.question.subject_name : 'Chung';
+        if (subjectMap[subj]) subjectMap[subj].total++;
+    });
+
+    // ── Difficulty color map ─────────────────────────────────────────────────
+    var diffColors = {
+        'easy':   { bg: 'var(--color-success-light)', color: 'var(--color-success)', icon: 'bi-circle-fill' },
+        'medium': { bg: 'var(--color-warning-light)', color: 'var(--color-warning)', icon: 'bi-triangle-fill' },
+        'hard':   { bg: 'var(--color-danger-light)',  color: 'var(--color-danger)',  icon: 'bi-diamond-fill' }
+    };
+
+    // ── Build HTML ────────────────────────────────────────────────────────────
+    var htmlParts = [];
+
+    // Summary chips row
+    htmlParts.push('<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1.25rem;">');
+    Object.keys(subjectMap).forEach(function(subj) {
+        var d = subjectMap[subj];
+        var pct = d.total > 0 ? Math.round(d.wrong / d.total * 100) : 100;
+        htmlParts.push(
+            '<div style="display:inline-flex;align-items:center;gap:0.5rem;background:var(--color-danger-light);'
+            + 'border:1px solid var(--color-danger);border-radius:20px;padding:0.35rem 0.875rem;font-size:0.82rem;font-weight:600;color:var(--color-danger);">'
+            + '<i class="bi bi-book-fill" style="font-size:0.7rem;"></i>'
+            + escapeHtml(subj)
+            + ' &nbsp;<span style="background:var(--color-danger);color:#fff;border-radius:10px;padding:0.1rem 0.45rem;font-size:0.7rem;">'
+            + d.wrong + ' câu sai</span></div>'
+        );
+    });
+    htmlParts.push('</div>');
+
+    // Per-subject detail
+    Object.keys(subjectMap).forEach(function(subj) {
+        var d = subjectMap[subj];
+        htmlParts.push(
+            '<div style="margin-bottom:1.25rem;border:1px solid var(--color-border);border-radius:var(--radius-lg);overflow:hidden;">'
+            + '<div style="background:var(--color-bg);padding:0.875rem 1.25rem;border-bottom:1px solid var(--color-border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;">'
+            + '<div style="font-weight:700;font-size:0.95rem;"><i class="bi bi-journal-text me-2" style="color:var(--color-primary);"></i>' + escapeHtml(subj) + '</div>'
+            + '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;">'
+        );
+        // Difficulty chips for this subject
+        var diffOrder = ['easy', 'medium', 'hard'];
+        diffOrder.forEach(function(dk) {
+            if (d.difficulties[dk]) {
+                var dc = diffColors[dk] || diffColors['easy'];
+                htmlParts.push(
+                    '<span style="background:' + dc.bg + ';color:' + dc.color + ';border:1px solid ' + dc.color
+                    + ';border-radius:10px;padding:0.2rem 0.6rem;font-size:0.72rem;font-weight:700;">'
+                    + '<i class="bi ' + dc.icon + '" style="font-size:0.55rem;vertical-align:middle;"></i> '
+                    + d.difficulties[dk].label + ': ' + d.difficulties[dk].count + ' câu</span>'
+                );
+            }
+        });
+        htmlParts.push('</div></div>'); // end header
+
+        // List specific question topics
+        htmlParts.push('<div style="padding:0.875rem 1.25rem;display:flex;flex-direction:column;gap:0.5rem;">');
+        d.items.forEach(function(entry) {
+            var q = entry.item.q;
+            var dc = diffColors[entry.item.q.difficulty] || diffColors['easy'];
+            // Extract short topic snippet from the question text
+            var rawText = '';
+            if (q.content_json && Array.isArray(q.content_json)) {
+                rawText = q.content_json.filter(function(b){return b.type==='text';}).map(function(b){return b.value||'';}).join(' ');
+            }
+            if (!rawText && q.text) rawText = q.text;
+            if (!rawText && q.context) rawText = q.context;
+            var snippet = rawText.trim().substring(0, 100);
+            if (rawText.length > 100) snippet += '…';
+
+            var statusIcon = entry.item.isUnanswered
+                ? '<i class="bi bi-dash-circle-fill" style="color:var(--color-muted);"></i>'
+                : '<i class="bi bi-x-circle-fill" style="color:var(--color-danger);"></i>';
+            var statusLabel = entry.item.isUnanswered ? '<span style="color:var(--color-muted);font-size:0.7rem;font-weight:600;">(Bỏ trống)</span>' : '';
+
+            htmlParts.push(
+                '<div style="display:flex;align-items:flex-start;gap:0.65rem;padding:0.6rem 0.75rem;background:var(--color-bg);border-radius:var(--radius-md);border-left:3px solid ' + dc.color + ';font-size:0.82rem;">'
+                + '<div style="flex-shrink:0;margin-top:2px;">' + statusIcon + '</div>'
+                + '<div style="flex:1;min-width:0;">'
+                + (snippet ? '<div style="color:var(--color-text);line-height:1.5;">' + escapeHtml(snippet) + '</div>' : '<div style="color:var(--color-muted);font-style:italic;">Câu hỏi có hình ảnh/công thức</div>')
+                + '<div style="margin-top:0.25rem;display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">'
+                + '<span style="background:' + dc.bg + ';color:' + dc.color + ';border-radius:8px;padding:0.1rem 0.45rem;font-size:0.65rem;font-weight:700;">' + escapeHtml(entry.diffLabel) + '</span>'
+                + statusLabel
+                + '</div></div></div>'
+            );
+        });
+        htmlParts.push('</div></div>'); // end body + card
+    });
+
+    // Call to action
+    htmlParts.push(
+        '<div style="margin-top:0.75rem;padding:0.875rem 1rem;background:linear-gradient(135deg,rgba(245,158,11,0.08),rgba(239,68,68,0.08));'
+        + 'border:1px solid rgba(245,158,11,0.3);border-radius:var(--radius-md);font-size:0.82rem;">'
+        + '<i class="bi bi-lightbulb-fill me-2" style="color:#f59e0b;"></i>'
+        + '<strong>Gợi ý:</strong> Hãy xem lại phần giải thích cho các câu sai ở bên dưới, '
+        + 'hoặc yêu cầu giáo viên tạo <em>bài phục thù</em> để ôn lại những chủ đề này.'
+        + '</div>'
+    );
+
+    body.innerHTML = htmlParts.join('');
+    wrapper.style.display = 'block';
 }
 
 function renderReview(questions, answers) {

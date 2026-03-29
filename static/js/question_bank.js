@@ -248,15 +248,6 @@ function updateBulkToolbar() {
     }
 }
 
-function isNeedsReview(q) {
-    if (q.question_type === 'multiple_choice' || q.question_type === 'true_false') {
-        return !q.options || q.options.length === 0 || !q.options.some(o => o.is_correct);
-    }
-    if (q.question_type === 'short_answer') {
-        return !q.correct_answer_text || q.correct_answer_text.trim() === '';
-    }
-    return false;
-}
 
 const TYPE_LBL = {
     multiple_choice: '<span class="badge bg-primary-subtle text-primary"><i class="bi bi-ui-radios-grid me-1"></i>Trắc nghiệm</span>',
@@ -352,6 +343,11 @@ function isNeedsReview(q) {
     }
     const options = Array.isArray(q.options) ? q.options : [];
     if (options.length === 0) return true;
+    // Câu Đúng/Sai: hợp lệ khi có ít nhất 2 phát biểu
+    // (mỗi phát biểu đã được AI gán is_correct true/false — không yêu cầu có phát biểu nào là Đúng)
+    if (q.question_type === 'true_false') {
+        return options.length < 2;
+    }
     return !options.some(o => !!o.is_correct);
 }
 

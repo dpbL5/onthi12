@@ -409,6 +409,8 @@ class QuizDetailView(generics.RetrieveUpdateDestroyAPIView):
                 is_published=True
             ).filter(
                 Q(publish_at__isnull=True) | Q(publish_at__lte=timezone.now())
+            ).filter(
+                Q(assigned_to__isnull=True) | Q(assigned_to=user)
             )
             
         return Quiz.objects.none()
@@ -473,6 +475,8 @@ class StudentQuizListView(generics.ListAPIView):
             is_published=True
         ).filter(
             Q(publish_at__isnull=True) | Q(publish_at__lte=timezone.now())
+        ).filter(
+            Q(assigned_to__isnull=True) | Q(assigned_to=user)
         )
 
 
@@ -491,6 +495,9 @@ class QuizStartView(APIView):
 
         if not quiz.classroom.class_students.filter(student=user).exists():
             return Response({'detail': 'Bạn không thuộc lớp học này.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if quiz.assigned_to and quiz.assigned_to != user:
+            return Response({'detail': 'Bài kiểm tra này không dành cho bạn.'}, status=status.HTTP_403_FORBIDDEN)
 
         attempt, created = QuizAttempt.objects.get_or_create(quiz=quiz, student=user)
         if attempt.is_completed:
@@ -737,7 +744,8 @@ class StudentProgressAPIView(APIView):
         # Build weaknesses analysis
         subject_stats = {}
         difficulty_stats = {}
-        
+
+        # ── Phân tích toàn bộ lịch sử ──────────────────────────────
         answers = StudentAnswer.objects.filter(attempt__in=attempts).select_related('quiz_question__question', 'quiz_question__question__subject')
         
         for ans in answers:
@@ -772,10 +780,76 @@ class StudentProgressAPIView(APIView):
                 acc = stats['correct'] / stats['total']
                 if acc < 0.6:
                     weaknesses.append(f"Kỹ năng {diff_map.get(diff, diff)} (Chính xác {int(acc*100)}%)")
-                    
+
+        # ── Phân tích bài thi GẦN NHẤT (bắt điểm yếu mới phát sinh) ──
+        recent_attempt = attempts.last()
+        if recent_attempt:
+            recent_subject_stats = {}
+            recent_diff_stats = {}
+            recent_answers = StudentAnswer.objects.filter(attempt=recent_attempt).select_related(
+                'quiz_question__question', 'quiz_question__question__subject'
+            )
+            for ans in recent_answers:
+                q = ans.quiz_question.question
+                subj_name = q.subject.name if q.subject else "Chung"
+                diff = q.difficulty
+                is_corr = ans.is_correct()
+
+                if subj_name not in recent_subject_stats:
+                    recent_subject_stats[subj_name] = {'total': 0, 'correct': 0}
+                recent_subject_stats[subj_name]['total'] += 1
+                if is_corr:
+                    recent_subject_stats[subj_name]['correct'] += 1
+
+                if diff not in recent_diff_stats:
+                    recent_diff_stats[diff] = {'total': 0, 'correct': 0}
+                recent_diff_stats[diff]['total'] += 1
+                if is_corr:
+                    recent_diff_stats[diff]['correct'] += 1
+
+            # Đánh dấu yếu từ bài gần nhất (ngưỡng thấp hơn: ≥1 câu, accuracy < 70%)
+            for subj, st in recent_subject_stats.items():
+                if st['total'] >= 1:
+                    acc = st['correct'] / st['total']
+                    if acc < 0.7:
+                        label = f"Môn {subj} (Bài gần nhất: {int(acc*100)}%)"
+                        if label not in weaknesses:
+                            weaknesses.append(label)
+
+            for diff, st in recent_diff_stats.items():
+                if st['total'] >= 1:
+                    acc = st['correct'] / st['total']
+                    if acc < 0.7:
+                        label = f"Kỹ năng {diff_map.get(diff, diff)} (Bài gần nhất: {int(acc*100)}%)"
+                        if label not in weaknesses:
+                            weaknesses.append(label)
+
+        # ── Phát hiện SỤT ĐIỂM mạnh giữa các bài ──────────────────
+        score_trend = None
+        score_decline_warning = None
+        timeline_scores = [t['score'] for t in timeline if t['score'] is not None]
+        if len(timeline_scores) >= 2:
+            last_score = timeline_scores[-1]
+            prev_score = timeline_scores[-2]
+            drop = prev_score - last_score
+            if drop >= 3:
+                score_decline_warning = (
+                    f"Điểm sụt mạnh: từ {prev_score} xuống {last_score} "
+                    f"(giảm {drop:.1f} điểm so với bài trước)"
+                )
+                if score_decline_warning not in weaknesses:
+                    weaknesses.insert(0, score_decline_warning)
+            if last_score > prev_score:
+                score_trend = "up"
+            elif last_score < prev_score:
+                score_trend = "down"
+            else:
+                score_trend = "stable"
+
         return Response({
             "timeline": timeline,
             "weaknesses": weaknesses,
+            "score_trend": score_trend,
             "student_name": getattr(student, 'full_name', '') or student.username,
             "total_completed": attempts.count()
         })

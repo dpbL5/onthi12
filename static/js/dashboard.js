@@ -252,14 +252,31 @@ document.addEventListener('DOMContentLoaded', () => {
             const weaknessList = document.getElementById('weaknessList');
             const aiActions = document.getElementById('aiLearningActions');
             if (data.weaknesses && data.weaknesses.length > 0) {
-                weaknessList.innerHTML = data.weaknesses.map(w => 
-                    `<li class="list-group-item d-flex align-items-center gap-2 py-2 border-0 border-bottom">
-                        <i class="bi bi-x-circle text-danger"></i>${w}
-                    </li>`
-                ).join('');
+                weaknessList.innerHTML = data.weaknesses.map(w => {
+                    const isDecline = w.startsWith('Điểm sụt mạnh');
+                    return `<li class="list-group-item d-flex align-items-start gap-2 py-2 border-0 border-bottom ${isDecline ? 'bg-danger-subtle' : ''}">
+                        <i class="bi ${isDecline ? 'bi-graph-down-arrow text-danger fs-5' : 'bi-x-circle text-warning'} flex-shrink-0 mt-1"></i>
+                        <span class="${isDecline ? 'text-danger fw-semibold' : ''}">${w}</span>
+                    </li>`;
+                }).join('');
                 aiActions.style.display = 'block'; // Show AI actions if there are weaknesses
             } else if (data.total_completed > 0) {
                 weaknessList.innerHTML = '<li class="list-group-item text-success text-center py-4 border-0"><i class="bi bi-check-circle-fill me-2"></i>Phong độ tuyệt vời! Không phát hiện lỗ hổng kiến thức nghiêm trọng.</li>';
+            }
+
+            // Hiển thị xu hướng điểm (score_trend) nếu có
+            const trendEl = document.getElementById('scoreTrendBadge');
+            if (trendEl && data.score_trend) {
+                const trendMap = {
+                    up:     { icon: 'bi-arrow-up-circle-fill', text: 'Đang tiến bộ', cls: 'text-success' },
+                    down:   { icon: 'bi-arrow-down-circle-fill', text: 'Có dấu hiệu sụt giảm', cls: 'text-danger' },
+                    stable: { icon: 'bi-dash-circle-fill', text: 'Ổn định', cls: 'text-secondary' },
+                };
+                const t = trendMap[data.score_trend];
+                if (t) {
+                    trendEl.innerHTML = `<i class="bi ${t.icon} me-1"></i><span>${t.text}</span>`;
+                    trendEl.className = `fw-medium small ${t.cls}`;
+                }
             }
 
         } catch (e) {

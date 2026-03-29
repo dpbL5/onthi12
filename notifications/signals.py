@@ -21,6 +21,10 @@ def notify_students_on_quiz_publish(sender, instance, created, **kwargs):
     if not quiz.is_published:
         return
 
+    # Bỏ qua bài thi cá nhân (VD: Phục thù)
+    if quiz.assigned_to is not None:
+        return
+
     # Kiểm tra xem đã có notification cho quiz này chưa để tránh duplicate
     if Notification.objects.filter(
         verb=Notification.VERB_PUBLISHED_QUIZ,

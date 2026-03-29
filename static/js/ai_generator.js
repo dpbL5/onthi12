@@ -366,6 +366,23 @@ const AIGenerator = {
             return `<div class="p-2 border rounded bg-light small"><strong>Đáp án đúng:</strong> ${this.escapeHtml(q.correct_answer_text)}</div>`;
         }
         const options = Array.isArray(q.options) ? q.options : [];
+        
+        // Câu Đúng/Sai: mỗi phát biểu hiển thị nhãn Đúng/Sai thay vì A/B/C/D
+        if (type === 'true_false') {
+            const labels = ['a', 'b', 'c', 'd'];
+            return `<div class="d-flex flex-column gap-2">${options.map((o, i) => {
+                const isCorrect = o.is_correct === true;
+                const label = labels[i] || String.fromCharCode(97 + i);
+                const answerBadge = isCorrect
+                    ? '<span class="badge bg-success ms-2"><i class="bi bi-check-lg"></i> Đúng</span>'
+                    : '<span class="badge bg-danger ms-2"><i class="bi bi-x-lg"></i> Sai</span>';
+                return `
+                <div class="p-2 border rounded ${isCorrect ? 'bg-success-subtle border-success' : 'bg-danger-subtle border-danger'} small">
+                    <strong class="me-1">${label})</strong> ${QuestionRenderer.renderOption(o, q.question_images)} ${answerBadge}
+                </div>`;
+            }).join('')}</div>`;
+        }
+        
         return `<div class="row g-2">${options.map((o, i) => `
             <div class="col-md-6">
                 <div class="p-2 border rounded ${o.is_correct ? 'bg-success-subtle border-success' : 'bg-white'} small h-100">
@@ -377,6 +394,12 @@ const AIGenerator = {
 
     hasConfiguredAnswer(q) {
         if (q.question_type === 'short_answer') return !!(q.correct_answer_text && q.correct_answer_text.trim());
+        // Câu Đúng/Sai: hợp lệ khi có ít nhất 2 phát biểu (mỗi phát biểu đã được gán đúng/sai bởi AI)
+        // Không yêu cầu phải có phát biểu nào là_correct: true — vì is_correct là tính chất của phát biểu,
+        // không phải "đây là đáp án đúng" như multiple_choice.
+        if (q.question_type === 'true_false') {
+            return Array.isArray(q.options) && q.options.length >= 2;
+        }
         return Array.isArray(q.options) && q.options.some(o => o.is_correct);
     }
 };

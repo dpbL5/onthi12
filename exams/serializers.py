@@ -338,12 +338,15 @@ class OptionReviewSerializer(serializers.ModelSerializer):
 class QuestionReviewSerializer(serializers.ModelSerializer):
     options = OptionReviewSerializer(many=True, read_only=True)
     question_images = QuestionImageSerializer(many=True, read_only=True)
+    subject_name = serializers.CharField(source='subject.name', read_only=True)
+    difficulty_display = serializers.CharField(source='get_difficulty_display', read_only=True)
 
     class Meta:
         model = Question
         fields = [
-            'id', 'question_type', 'text', 'content_json', 'context', 
-            'image', 'options', 'question_images', 'correct_answer_text', 'explanation'
+            'id', 'question_type', 'text', 'content_json', 'context',
+            'image', 'options', 'question_images', 'correct_answer_text', 'explanation',
+            'subject_name', 'difficulty', 'difficulty_display'
         ]
 
 

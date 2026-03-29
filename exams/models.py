@@ -136,6 +136,7 @@ class Quiz(models.Model):
     is_published = models.BooleanField(default=False, help_text="Học sinh có thể thấy bài này chưa?")
     publish_at = models.DateTimeField(null=True, blank=True, help_text="Hẹn giờ công khai")
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_quizzes')
+    assigned_to = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name='assigned_quizzes', help_text="Nếu có, bài này chỉ dành riêng cho học sinh này (VD: bài Phục thù).")
     created_at = models.DateTimeField(auto_now_add=True)
     due_date = models.DateTimeField(null=True, blank=True)
 
