@@ -217,3 +217,7 @@ CACHES = {
         'TIMEOUT': 60 * 15,  # Default 15 minutes
     }
 }
+
+# Add file upload limits (Increase from default 2.5MB to 10MB to avoid 413 Payload Too Large)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10 MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10 MB

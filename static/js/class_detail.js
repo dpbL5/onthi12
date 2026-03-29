@@ -440,22 +440,63 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.uploadRAGDocument = async function(e) {
         const file = e.target.files[0]; if (!file) return;
+
         const indicator = document.getElementById('uploadingDocIndicator');
         if (indicator) indicator.style.display = 'block';
-        const fd = new FormData(); fd.append('file', file);
+        
         try {
-            const res = await fetch(`/api/ai/classes/${classId}/documents/upload/`, {method:'POST',headers:{'Authorization':'Bearer '+token},body:fd});
+            // Bước 1: Upload trực tiếp lên Cloudinary từ thiết bị (bypass lỗi 4.5MB Vercel)
+            const cloudName = 'dvwkjiz2i';
+            const uploadPreset = 'nvh_upload';
+            const cFormData = new FormData();
+            cFormData.append('file', file);
+            cFormData.append('upload_preset', uploadPreset);
+            
+            // Dùng /raw/upload để hỗ trợ cả pdf, docx, txt (không phải ảnh)
+            const cloudRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/raw/upload`, {
+                method: 'POST',
+                body: cFormData
+            });
+            
+            if (!cloudRes.ok) {
+                throw new Error("Không thể kết nối máy chủ Cloudinary.");
+            }
+            const cloudData = await cloudRes.json();
+            
+            // Bước 2: Báo cho Django biết URL file và public_id
+            const payload = {
+                file_url: cloudData.secure_url,
+                file_name: file.name,
+                cloudinary_public_id: cloudData.public_id
+            };
+            
+            const res = await fetch(`/api/ai/classes/${classId}/documents/upload/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify(payload)
+            });
+            
             if (res.ok) { 
                 const data = await res.json();
                 const qCount = data.questions_extracted || 0;
                 let msg = 'Tải lên tài liệu thành công!';
-                if (qCount > 0) msg += ` AI đã nhận diện được ${qCount} câu hỏi dạng THPT 2025.`;
+                if (qCount > 0) msg += ` AI đã nhận diện được ${qCount} câu hỏi.`;
                 showGlobalAlert(msg, 'success'); 
                 await loadRAGDocuments(); 
+            } else { 
+                const err = await res.json().catch(() => ({})); 
+                alert("Lỗi: " + (err.error || "Không thể nạp tài liệu."));
             }
-            else { const err = await res.json(); alert("Lỗi: " + (err.error || "Không thể nạp tài liệu.")); }
-        } catch(err) { alert("Lỗi kết nối."); }
-        finally { if (indicator) indicator.style.display = 'none'; e.target.value = ''; }
+        } catch(err) { 
+            alert("Lỗi kết nối: " + err.message);
+        }
+        finally { 
+            if (indicator) indicator.style.display = 'none'; 
+            e.target.value = ''; 
+        }
     }
 
     window.deleteRAGDocument = async function(docId) {

@@ -221,28 +221,48 @@ class UploadClassDocumentView(APIView):
             return Response({"error": "Lớp học không tồn tại."}, status=status.HTTP_404_NOT_FOUND)
 
         file_obj = request.FILES.get('file')
-        if not file_obj:
-            return Response({"error": "Vui lòng đính kèm file."}, status=status.HTTP_400_BAD_REQUEST)
+        file_url = request.data.get('file_url')
+        file_name = request.data.get('file_name', 'document.pdf')
+        cloudinary_public_id = request.data.get('cloudinary_public_id')
+
+        if not file_obj and not file_url:
+            return Response({"error": "Vui lòng đính kèm file hoặc gửi đường dẫn file (file_url)."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            ext = os.path.splitext(file_obj.name)[1]
-            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
-                for chunk in file_obj.chunks():
-                    tmp_file.write(chunk)
-                tmp_file_path = tmp_file.name
+            tmp_file_path = None
+            if file_obj:
+                ext = os.path.splitext(file_obj.name)[1]
+                with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
+                    for chunk in file_obj.chunks():
+                        tmp_file.write(chunk)
+                    tmp_file_path = tmp_file.name
 
-            # CẬP NHẬT: Sử dụng Optimize 1-Shot của AIGeneratorService
-            # Upload lên Cloudinary trước khi tạo record Document
-            from .services.cloudinary_service import upload_to_cloudinary
-            cloudinary_res = upload_to_cloudinary(tmp_file_path, file_name=file_obj.name, resource_type='raw')
-            
+                # Upload lên Cloudinary trước khi tạo record Document (nếu client không tự upload)
+                from .services.cloudinary_service import upload_to_cloudinary
+                cloudinary_res = upload_to_cloudinary(tmp_file_path, file_name=file_obj.name, resource_type='raw')
+                
+                final_file_url = cloudinary_res.get('secure_url') if cloudinary_res else None
+                final_public_id = cloudinary_res.get('public_id') if cloudinary_res else None
+                final_file_name = file_obj.name
+            else:
+                # Client đã tự upload lên Cloudinary (bypass Vercel 4.5MB limit)
+                import requests
+                ext = os.path.splitext(file_name)[1]
+                with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_file:
+                    resp = requests.get(file_url, stream=True, timeout=30)
+                    resp.raise_for_status()
+                    for chunk in resp.iter_content(chunk_size=8192):
+                        tmp_file.write(chunk)
+                    tmp_file_path = tmp_file.name
+                final_file_url = file_url
+                final_public_id = cloudinary_public_id
+                final_file_name = file_name
+
             doc_obj = Document.objects.create(
                 classroom=classroom,
-                title=file_obj.name,
-                # Note: We omit 'file=file_obj' because Vercel file system is read-only.
-                # All documents are now managed via Cloudinary (see file_url below).
-                file_url=cloudinary_res.get('secure_url') if cloudinary_res else None,
-                cloudinary_public_id=cloudinary_res.get('public_id') if cloudinary_res else None
+                title=final_file_name,
+                file_url=final_file_url,
+                cloudinary_public_id=final_public_id
             )
 
             try:
@@ -258,6 +278,7 @@ class UploadClassDocumentView(APIView):
             except Exception as ai_err:
                 # Nếu lỗi trích xuất AI, xoá cả bản ghi DB và file trên Cloudinary
                 if doc_obj.cloudinary_public_id:
+                    from .services.cloudinary_service import delete_from_cloudinary
                     delete_from_cloudinary(doc_obj.cloudinary_public_id, resource_type='raw')
                 doc_obj.delete()
                 if os.path.exists(tmp_file_path):
@@ -265,6 +286,11 @@ class UploadClassDocumentView(APIView):
                 return Response({"error": f"Lỗi xử lý hệ thống AI: {str(ai_err)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         except Exception as e:
+            if 'tmp_file_path' in locals() and tmp_file_path and os.path.exists(tmp_file_path):
+                try:
+                    os.remove(tmp_file_path)
+                except:
+                    pass
             return Response({"error": f"Lỗi upload: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class DeleteClassDocumentView(APIView):
