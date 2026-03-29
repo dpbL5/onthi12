@@ -672,7 +672,9 @@ class AIPersonalizedPathView(APIView):
             return Response({"insight": "Bạn chưa hoàn thành bài thi nào để AI có thể phân tích lộ trình học tập. Hãy hoàn thành ít nhất 1 bài thi."})
             
         subject_stats = {}
-        answers = StudentAnswer.objects.filter(attempt__in=attempts).select_related('quiz_question__question', 'quiz_question__question__subject')
+        wrong_questions_by_subject = {}
+        
+        answers = StudentAnswer.objects.filter(attempt__in=attempts).select_related('quiz_question__question', 'quiz_question__question__subject').order_by('id')
         for ans in answers:
             q = ans.quiz_question.question
             subj = q.subject.name if q.subject else "Chung"
@@ -683,6 +685,19 @@ class AIPersonalizedPathView(APIView):
             subject_stats[subj]['total'] += 1
             if is_corr:
                 subject_stats[subj]['correct'] += 1
+            else:
+                if subj not in wrong_questions_by_subject:
+                    wrong_questions_by_subject[subj] = []
+                q_text = str(q.text or '').strip()
+                if q.context:
+                    q_text = f"{q.context[:50]}... {q_text}"
+                q_text_short = q_text[:100] + '...' if len(q_text) > 100 else q_text
+                if q_text_short and q_text_short not in wrong_questions_by_subject[subj]:
+                    wrong_questions_by_subject[subj].append(q_text_short)
+                
+        # Giới hạn số lượng câu sai hiển thị cho AI để tránh quá tải token (5 câu mới nhất mỗi môn)
+        for subj in wrong_questions_by_subject:
+            wrong_questions_by_subject[subj] = wrong_questions_by_subject[subj][-5:]
                 
         # Lấy thông tin lớp học của học sinh để AI hiểu rõ ngữ cảnh cấp học
         class_context = ""
@@ -696,15 +711,19 @@ class AIPersonalizedPathView(APIView):
             pass
 
         prompt = f"""
-Bạn là một gia sư AI tận tâm. Dựa trên dữ liệu dưới đây, hãy đề xuất một lộ trình học tập tập trung vào môn học có độ chính xác dưới 60%.{class_context}
+Bạn là một gia sư AI tận tâm. Dựa trên dữ liệu dưới đây, hãy đề xuất một lộ trình học tập cá nhân hóa nhằm khắc phục các lỗ hổng kiến thức.{class_context}
 
-Dữ liệu học tập (Môn: Số câu đúng / Tổng số câu):
+DỮ LIỆU TỔNG QUAN (Số câu đúng / Tổng số câu):
 {json.dumps(subject_stats, ensure_ascii=False)}
 
-YÊU CẦU BÁO CÁO:
+CÁC CÂU HỎI HỌC SINH ĐÃ LÀM SAI GẦN ĐÂY (Nội dung tóm tắt):
+{json.dumps(wrong_questions_by_subject, ensure_ascii=False, indent=2)}
+
+YÊU CẦU LỘ TRÌNH ĐỀ XUẤT:
 1. Đưa ra nhận xét ngắn gọn, khích lệ người học.
-2. Đề xuất 2-3 bước hành động cụ thể để khắc phục điểm yếu.
-3. TRÌNH BÀY BẰNG MARKDOWN: Sử dụng CÁC THẺ HEADING (#, ##) và BẮT BUỘC PHẢI XUỐNG DÒNG (line break) rõ ràng giữa các đoạn văn, các heading và các mục danh sách để dễ đọc. Tuyệt đối không viết liền tù tì thành một đoạn văn duy nhất.
+2. PHÂN TÍCH LỖ HỔNG: Phân tích cụ thể nội dung các câu hỏi mà học sinh làm sai ở trên. ĐƯỢC PHÉP DÙNG KIẾN THỨC BÊN NGOÀI (Open Knowledge) để suy luận xem học sinh đang bị yếu ở những dạng bài tập nào, hoặc quên mất khái niệm lý thuyết cụ thể nào.
+3. ĐỀ XUẤT LỘ TRÌNH ÔN TẬP: Ghi rõ tên các bài học, định lý, công thức, hoặc mảng kiến thức cụ thể cần ôn lại dựa trên sự phân tích trên. Không nói chung chung kiểu "hãy ôn lại môn Toán", mà phải nói cụ thể "hãy ôn lại cách tính đạo hàm hàm hợp, hay ngữ pháp câu điều kiện loại 2...".
+4. TRÌNH BÀY BẰNG MARKDOWN: Sử dụng CÁC THẺ HEADING (#, ##) và BẮT BUỘC PHẢI XUỐNG DÒNG (line break) rõ ràng giữa các đoạn văn, các heading và các mục danh sách để dễ đọc.
 """
         try:
             response = ai_client.generate_content(prompt)

@@ -880,11 +880,11 @@ class AIGeneratorService:
         # 3. Dynamic Prompt refinement based on question_types
         type_instructions = ""
         if question_types == 'multiple_choice':
-            type_instructions = "CHỈ tạo duy nhất loại: 1. multiple_choice (PHẦN I - Trắc nghiệm 4 lựa chọn). Mỗi JSON object PHẢI có \"question_type\": \"multiple_choice\"."
+            type_instructions = f"CHỈ tạo duy nhất loại: 1. multiple_choice (PHẦN I - Trắc nghiệm 4 lựa chọn). BẮT BUỘC tạo ra một mảng chứa ĐÚNG {count} JSON objects, mỗi object có \"question_type\": \"multiple_choice\"."
         elif question_types == 'true_false':
-            type_instructions = "CHỈ tạo duy nhất loại: 2. true_false (PHẦN II - Trắc nghiệm Đúng/Sai). ĐẶC BIỆT LƯU Ý: Rất nhiều lúc bạn tạo sai dạng này!! \n1 câu True/False gồm 1 VẤN ĐỀ CHUNG và ĐÚNG 4 CÂU PHÁT BIỂU (A, B, C, D) năm trong mảng `options`! \nKHÔNG THỂ hiện từng phát biểu thành 1 câu hỏi độc lập. PHẢI gộp 4 phát biểu vào chung 1 JSON object duy nhất (có \"question_type\": \"true_false\")."
+            type_instructions = f"CHỈ tạo duy nhất loại: 2. true_false (PHẦN II - Trắc nghiệm Đúng/Sai). BẮT BUỘC TẠO RA MỘT MẢNG GỒM ĐÚNG {count} JSON OBJECTS. Mỗi JSON object là 1 câu hỏi True/False chứa 1 VẤN ĐỀ CHUNG (`context`) và đúng 4 câu phát biểu A, B, C, D nằm trong mảng `options`. TUYỆT ĐỐI KHÔNG được tách 4 phát biểu thành 4 câu hỏi riêng biệt. Bắt buộc \"question_type\" phải là \"true_false\"."
         elif question_types == 'short_answer':
-            type_instructions = "CHỈ tạo duy nhất loại: 3. short_answer (PHẦN III - Câu hỏi trả lời ngắn). Mỗi JSON object PHẢI có \"question_type\": \"short_answer\"."
+            type_instructions = f"CHỈ tạo duy nhất loại: 3. short_answer (PHẦN III - Câu hỏi trả lời ngắn). BẮT BUỘC tạo ra một mảng chứa ĐÚNG {count} JSON objects, mỗi object có \"question_type\": \"short_answer\"."
         else:
             type_instructions = "Bạn có thể tạo hỗn hợp cả 3 loại: multiple_choice, true_false, và short_answer nếu thấy phù hợp."
 
